@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: pharos-sync-server
+    runtime: python
+    plan: free
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server/main.py
+    envVars:
+      - key: DATABASE_URL
+        value: ./pharos_reports.db
+      - key: PORT
+        value: 8000
+    routes:
+      - path: /
+        destination: /health
+      - path: /api/v1/reports
+        destination: /api/v1/reports
+      - path: /api/v1/stats
+        destination: /api/v1/stats
+      - path: /dashboard
+        destination: /server/dashboard.html

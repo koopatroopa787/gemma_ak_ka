@@ -1,0 +1,31 @@
+# Core inference
+llama-cpp-python>=0.2.56
+pillow>=10.0.0
+numpy>=1.24.0
+opencv-python-headless>=4.8.0
+
+# Schema and validation
+pydantic>=2.5.0
+
+# Server
+fastapi>=0.109.0
+uvicorn>=0.27.0
+
+# Cryptography
+cryptography>=42.0.0
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+
+# Benchmark utilities
+psutil>=5.9.0
+requests>=2.31.0
+
+# Linting
+ruff>=0.6.0
+
+# Fine-tuning (Kaggle only, not installed locally)
+# unsloth
+# datasets
+# transformers
