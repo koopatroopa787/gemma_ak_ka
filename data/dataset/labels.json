@@ -1,0 +1,135 @@
+[
+  {
+    "filename": "authentic/auth_back_blister.jpg",
+    "authentic": true,
+    "risk_level": "LOW",
+    "defects": [],
+    "source": "back_blister.png"
+  },
+  {
+    "filename": "suspicious/susp_back_blister_00.jpg",
+    "authentic": false,
+    "risk_level": "HIGH",
+    "risk_score": 77,
+    "defects": [
+      {
+        "type": "batch_code_format",
+        "fake_code": "FAKE-BATCH-99"
+      },
+      {
+        "type": "color_shift",
+        "severity": 0.078
+      }
+    ],
+    "anomaly_types": [
+      "batch_code_format",
+      "color_shift"
+    ],
+    "source": "back_blister.png"
+  },
+  {
+    "filename": "suspicious/susp_back_blister_01.jpg",
+    "authentic": false,
+    "risk_level": "LOW",
+    "risk_score": 15,
+    "defects": [
+      {
+        "type": "color_shift",
+        "severity": 0.067
+      }
+    ],
+    "anomaly_types": [
+      "color_shift"
+    ],
+    "source": "back_blister.png"
+  },
+  {
+    "filename": "suspicious/susp_back_blister_02.jpg",
+    "authentic": false,
+    "risk_level": "HIGH",
+    "risk_score": 76,
+    "defects": [
+      {
+        "type": "batch_code_format",
+        "fake_code": "XXXXXX"
+      },
+      {
+        "type": "hologram_anomaly"
+      }
+    ],
+    "anomaly_types": [
+      "batch_code_format",
+      "hologram_anomaly"
+    ],
+    "source": "back_blister.png"
+  },
+  {
+    "filename": "authentic/auth_front_blister.jpg",
+    "authentic": true,
+    "risk_level": "LOW",
+    "defects": [],
+    "source": "front_blister.png"
+  },
+  {
+    "filename": "suspicious/susp_front_blister_00.jpg",
+    "authentic": false,
+    "risk_level": "MODERATE",
+    "risk_score": 60,
+    "defects": [
+      {
+        "type": "batch_code_format",
+        "fake_code": "ABC"
+      },
+      {
+        "type": "color_shift",
+        "severity": 0.168
+      }
+    ],
+    "anomaly_types": [
+      "batch_code_format",
+      "color_shift"
+    ],
+    "source": "front_blister.png"
+  },
+  {
+    "filename": "suspicious/susp_front_blister_01.jpg",
+    "authentic": false,
+    "risk_level": "HIGH",
+    "risk_score": 80,
+    "defects": [
+      {
+        "type": "batch_code_format",
+        "fake_code": "00000000"
+      },
+      {
+        "type": "hologram_anomaly"
+      }
+    ],
+    "anomaly_types": [
+      "batch_code_format",
+      "hologram_anomaly"
+    ],
+    "source": "front_blister.png"
+  },
+  {
+    "filename": "suspicious/susp_front_blister_02.jpg",
+    "authentic": false,
+    "risk_level": "MODERATE",
+    "risk_score": 36,
+    "defects": [
+      {
+        "type": "color_shift",
+        "severity": 0.07
+      },
+      {
+        "type": "print_blur",
+        "radius": 1.22
+      }
+    ],
+    "anomaly_types": [
+      "color_shift",
+      "print_blur"
+    ],
+    "source": "front_blister.png"
+  }
+]

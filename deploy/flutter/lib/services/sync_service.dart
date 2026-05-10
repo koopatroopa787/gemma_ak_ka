@@ -13,8 +13,8 @@ class SyncService {
   final syncStatus = ValueNotifier<String>('');
 
   Future<void> syncIfOnline() async {
-    final connectivity = await Connectivity().checkConnectivity();
-    if (connectivity == ConnectivityResult.none) {
+    final List<ConnectivityResult> connectivity = await Connectivity().checkConnectivity();
+    if (connectivity.contains(ConnectivityResult.none)) {
       syncStatus.value = 'Offline';
       return;
     }
@@ -80,7 +80,10 @@ class SyncService {
         syncStatus.value = 'Sync failed: ${response.statusCode}';
       }
     } catch (e) {
-      syncStatus.value = 'Error: $e';
+      // Sync is an optional cloud feature — always fail silently so the
+      // offline-first experience is never interrupted by network errors.
+      debugPrint('Pharos sync skipped: $e');
+      syncStatus.value = 'Sync unavailable';
     } finally {
       isSyncing.value = false;
     }

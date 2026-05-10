@@ -1,14 +1,24 @@
-from fastapi import FastAPI, HTTPException, Body
-from pydantic import BaseModel, Field
-from typing import List, Optional
-import sqlite3
+import io
 import json
+import sqlite3
 from datetime import datetime
 from pathlib import Path
-import hashlib
-import hmac
+from typing import Any, List, Optional
+
+from fastapi import Body, FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from PIL import Image
+from pydantic import BaseModel, Field
+
+from core.pipeline import run_pharos_pipeline
 
 app = FastAPI(title="Pharos Sync Server", version="1.0.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Database path
 DB_PATH = Path("./pharos_reports.db")
@@ -21,7 +31,7 @@ class ScanResult(BaseModel):
     batch_code: str
     risk_level: str
     risk_score: int = Field(ge=0, le=100)
-    flags: List[str] = []
+    flags: List[str] = Field(default_factory=list)
 
 
 class SyncPayload(BaseModel):
@@ -38,6 +48,24 @@ class ReportStats(BaseModel):
     moderate_count: int
     low_count: int
     last_24h_count: int
+
+
+class HistoryItem(BaseModel):
+    id: str
+    timestamp: str
+    medicine_name: str
+    batch_code: str
+    risk_level: str
+    risk_score: int
+    flags: List[str] = Field(default_factory=list)
+    synced: bool = True
+
+
+class HistoryResponse(BaseModel):
+    items: List[HistoryItem]
+    total: int
+    limit: int
+    offset: int
 
 
 def init_db():
@@ -142,6 +170,31 @@ async def ingest_reports(payload: SyncPayload = Body(...)) -> dict:
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.post("/api/v1/analyze")
+async def analyze_package(image: UploadFile = File(...)) -> dict[str, Any]:
+    """
+    Analyze one uploaded blister-pack image using the core Pharos pipeline.
+    """
+    if image.content_type and not image.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Only image uploads are supported")
+
+    image_bytes = await image.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded image is empty")
+
+    try:
+        pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid image: {exc}") from exc
+
+    try:
+        return run_pharos_pipeline(pil_image)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @app.get("/api/v1/stats")
 async def get_stats() -> ReportStats:
     """
@@ -187,6 +240,83 @@ async def get_stats() -> ReportStats:
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/history", response_model=HistoryResponse)
+async def get_history(
+    limit: int = 20,
+    offset: int = 0,
+    risk_level: Optional[str] = None,
+    search: Optional[str] = None,
+) -> HistoryResponse:
+    """
+    Return paginated report history with optional risk and text filters.
+    """
+    if limit < 1 or limit > 100:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 100")
+    if offset < 0:
+        raise HTTPException(status_code=400, detail="offset must be >= 0")
+
+    filters: list[str] = []
+    params: list[Any] = []
+
+    if risk_level:
+        filters.append("risk_level = ?")
+        params.append(risk_level.upper())
+
+    if search:
+        term = f"%{search.strip()}%"
+        filters.append("(medicine_name LIKE ? OR batch_code LIKE ?)")
+        params.extend([term, term])
+
+    where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
+
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute(f"SELECT COUNT(*) AS total FROM reports {where_clause}", params)
+        total = int(cursor.fetchone()["total"])
+
+        query = f"""
+            SELECT
+                id, timestamp, medicine_name, batch_code, risk_level, risk_score, flags
+            FROM reports
+            {where_clause}
+            ORDER BY datetime(timestamp) DESC, created_at DESC
+            LIMIT ? OFFSET ?
+        """
+        cursor.execute(query, [*params, limit, offset])
+        rows = cursor.fetchall()
+        conn.close()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    items: list[HistoryItem] = []
+    for row in rows:
+        raw_flags = row["flags"] or "[]"
+        try:
+            parsed_flags = json.loads(raw_flags) if raw_flags else []
+        except json.JSONDecodeError:
+            parsed_flags = []
+        if not isinstance(parsed_flags, list):
+            parsed_flags = []
+
+        items.append(
+            HistoryItem(
+                id=row["id"],
+                timestamp=row["timestamp"],
+                medicine_name=row["medicine_name"],
+                batch_code=row["batch_code"],
+                risk_level=row["risk_level"],
+                risk_score=row["risk_score"],
+                flags=parsed_flags,
+                synced=True,
+            )
+        )
+
+    return HistoryResponse(items=items, total=total, limit=limit, offset=offset)
 
 
 @app.get("/health")

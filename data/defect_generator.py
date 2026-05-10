@@ -282,7 +282,7 @@ def generate_dataset(
         "output_dir":  str(output_path),
     }
 
-    print(f"\n✅ Dataset generated:")
+    print(f"\n[OK] Dataset generated:")
     print(f"   Authentic:  {n_authentic}")
     print(f"   Suspicious: {n_suspicious}")
     print(f"   Total:      {n_authentic + n_suspicious}")

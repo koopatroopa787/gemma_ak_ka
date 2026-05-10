@@ -16,10 +16,19 @@ pluginManagement {
     }
 }
 
+// dependencyResolutionManagement resolves *library* dependencies (not Gradle plugins).
+// litertlm-android 0.11.0 lives on standard Google Maven — no custom repo needed.
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
 plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
-    id("com.android.application") version "8.7.0" apply false
-    id("org.jetbrains.kotlin.android") version "1.8.22" apply false
+    id("com.android.application") version "8.9.1" apply false
+    id("org.jetbrains.kotlin.android") version "2.3.0" apply false
 }
 
 include(":app")

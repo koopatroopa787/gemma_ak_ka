@@ -11,20 +11,23 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        // Java 17 matches the JDK bundled with Android Studio / Flutter toolchain.
+        // Do NOT raise this to 21 — the bundled JDK does not support it.
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_1_8.toString()
+    // KGP 2.x uses compilerOptions instead of the deprecated kotlinOptions block.
+    kotlin {
+        compilerOptions {
+            jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+        }
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.pharos.pharos_flutter"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // LiteRT-LM requires API 26+ (Android 8.0) for GPU delegate & NNAPI.
+        minSdk = 26
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -41,4 +44,14 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // LiteRT-LM — on standard Google Maven, no custom repo needed.
+    // 0.11.0 is the version Google AI Edge Gallery currently ships with and
+    // the litert-community HuggingFace models are built for.
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.11.0")
+
+    // Kotlin coroutines for background inference work
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 }

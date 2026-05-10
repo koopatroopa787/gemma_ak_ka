@@ -20,11 +20,15 @@ This separation is what you show in your write-up as "hybrid pipeline."
 from __future__ import annotations
 
 import base64
+import io
+import os
 import time
+from pathlib import Path
 from typing import Optional
 
 import cv2
 import numpy as np
+from PIL import Image
 
 from core.prompt import SYSTEM_PROMPT, parse_model_output
 from core.schema import RiskLevel
@@ -301,3 +305,175 @@ class PharosPipeline:
         except Exception as e:
             print(f"[GEMMA ERROR] {e}")
             return None
+
+
+_RUNTIME_PIPELINE: Optional[PharosPipeline] = None
+
+
+def _mock_analysis() -> dict:
+    """Deterministic dev response when MOCK_INFERENCE is enabled."""
+    return {
+        "medicine_name": "Mock Medicine 500mg",
+        "batch_code": {
+            "extracted": "MOCK-2026-001",
+            "format_valid": True,
+            "format_error": None,
+            "registry_match": None,
+        },
+        "expiry_date": {
+            "extracted": "12/2028",
+            "format_valid": True,
+            "not_expired": True,
+        },
+        "manufacturer": {
+            "extracted": "Pharos Labs",
+            "region_inferred": "Unknown",
+            "name_legible": True,
+        },
+        "security": {
+            "hologram_detected": True,
+            "hologram_intact": True,
+            "tamper_evident_seal": True,
+            "seal_intact": True,
+        },
+        "visual_anomalies": [],
+        "risk_score": 12,
+        "risk_level": "LOW",
+        "flags": [],
+        "confidence": 0.9,
+        "analysis_notes": "Mock inference is enabled for local development.",
+        "image_quality_ok": True,
+    }
+
+
+def _normalise_analysis_output(pipeline_result: dict) -> dict:
+    """Map full multi-layer pipeline output to BlistPackAnalysis shape."""
+    layers = pipeline_result.get("layers", {}) or {}
+    gemma_layer = layers.get("gemma", {}) or {}
+    parsed = gemma_layer.get("parsed", {}) or {}
+    final = pipeline_result.get("final", {}) or {}
+
+    batch_code = parsed.get("batch_code", {}) or {}
+    expiry_date = parsed.get("expiry_date", {}) or {}
+    manufacturer = parsed.get("manufacturer", {}) or {}
+    security = parsed.get("security", {}) or {}
+    visual_anomalies = parsed.get("visual_anomalies", []) or []
+
+    risk_score = int(final.get("risk_score", parsed.get("risk_score", 50)))
+    risk_level = final.get("risk_level", parsed.get("risk_level", "MODERATE"))
+    merged_flags = list(dict.fromkeys((final.get("flags", []) or []) + (parsed.get("flags", []) or [])))
+
+    return {
+        "medicine_name": final.get("medicine_name") or parsed.get("medicine_name") or "Unknown",
+        "batch_code": {
+            "extracted": batch_code.get("extracted") or final.get("batch_code") or "",
+            "format_valid": batch_code.get("format_valid"),
+            "format_error": batch_code.get("format_error"),
+            "registry_match": batch_code.get("registry_match"),
+        },
+        "expiry_date": {
+            "extracted": expiry_date.get("extracted") or final.get("expiry_date") or "",
+            "format_valid": expiry_date.get("format_valid"),
+            "not_expired": expiry_date.get("not_expired"),
+        },
+        "manufacturer": {
+            "extracted": manufacturer.get("extracted") or "",
+            "region_inferred": manufacturer.get("region_inferred") or "Unknown",
+            "name_legible": manufacturer.get("name_legible"),
+        },
+        "security": {
+            "hologram_detected": security.get("hologram_detected"),
+            "hologram_intact": security.get("hologram_intact"),
+            "tamper_evident_seal": security.get("tamper_evident_seal"),
+            "seal_intact": security.get("seal_intact"),
+        },
+        "visual_anomalies": visual_anomalies,
+        "risk_score": max(0, min(100, risk_score)),
+        "risk_level": risk_level,
+        "flags": merged_flags,
+        "confidence": float(parsed.get("confidence", 0.5)),
+        "analysis_notes": final.get("analysis_notes") or parsed.get("analysis_notes") or "",
+        "image_quality_ok": bool(final.get("image_quality_ok", parsed.get("image_quality_ok", True))),
+    }
+
+
+def _resolve_gguf_path(raw_path: str, env_var: str, role: str) -> Path:
+    path = Path(raw_path)
+    if path.is_file():
+        if path.suffix.lower() != ".gguf":
+            raise FileNotFoundError(
+                f"{env_var} points to {path}, but {role} must be a .gguf file."
+            )
+        return path
+
+    if path.is_dir():
+        direct = sorted(path.glob("*.gguf"))
+        nested = sorted(path.rglob("*.gguf"))
+        candidates = direct if direct else nested
+        if candidates:
+            return candidates[0]
+
+        adapter_file = path / "adapter_model.safetensors"
+        if adapter_file.exists():
+            raise FileNotFoundError(
+                f"{env_var} points to {path}, which contains adapter weights "
+                f"(adapter_model.safetensors) not directly loadable by llama.cpp. "
+                "Provide a base GGUF model file path instead."
+            )
+
+    raise FileNotFoundError(
+        f"{role} not found at {path}. Set {env_var} to a valid .gguf file path."
+    )
+
+
+def _load_runtime_pipeline() -> PharosPipeline:
+    """Lazy-load and cache pipeline runtime dependencies."""
+    global _RUNTIME_PIPELINE
+    if _RUNTIME_PIPELINE is not None:
+        return _RUNTIME_PIPELINE
+
+    model_path = _resolve_gguf_path(
+        os.getenv("PHAROS_MODEL_PATH", "models/gemma-4-E2B-it-Q4_K_M.gguf"),
+        "PHAROS_MODEL_PATH",
+        "Model",
+    )
+    mmproj_path = _resolve_gguf_path(
+        os.getenv("PHAROS_MMPROJ_PATH", "models/mmproj-gemma4.gguf"),
+        "PHAROS_MMPROJ_PATH",
+        "Vision projection model",
+    )
+
+    try:
+        from llama_cpp import Llama
+        from llama_cpp.llama_chat_format import Gemma3ChatHandler
+    except ImportError as exc:
+        raise RuntimeError("llama-cpp-python is required for /api/v1/analyze. Install dependencies first.") from exc
+
+    chat_handler = Gemma3ChatHandler(clip_model_path=str(mmproj_path))
+    llm = Llama(
+        model_path=str(model_path),
+        chat_handler=chat_handler,
+        n_ctx=4096,
+        n_gpu_layers=-1,
+        verbose=False,
+    )
+    _RUNTIME_PIPELINE = PharosPipeline(llm)
+    return _RUNTIME_PIPELINE
+
+
+def run_pharos_pipeline(pil_image: Image.Image) -> dict:
+    """
+    Public web endpoint helper.
+
+    Accepts a PIL image and returns the flattened BlistPackAnalysis payload.
+    """
+    if os.getenv("MOCK_INFERENCE", "").lower() in {"1", "true", "yes"}:
+        return _mock_analysis()
+
+    buffer = io.BytesIO()
+    pil_image.save(buffer, format="JPEG")
+    image_bytes = buffer.getvalue()
+
+    pipeline = _load_runtime_pipeline()
+    pipeline_result = pipeline.analyse(image_bytes)
+    return _normalise_analysis_output(pipeline_result)
