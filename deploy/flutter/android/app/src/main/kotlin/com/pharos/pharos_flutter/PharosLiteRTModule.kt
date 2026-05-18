@@ -1,6 +1,8 @@
 package com.pharos.pharos_flutter
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.util.Log
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Content
@@ -18,6 +20,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.File
 
 data class PharosSettings(
@@ -36,22 +39,9 @@ class PharosLiteRTModule(private val context: Context) {
 
     @Volatile private var engine: Engine? = null
     @Volatile private var conversation: Conversation? = null
+    @Volatile var activeBackend: String = "unknown"
 
     // ── Pre-flight model validation ───────────────────────────────────────────
-    //
-    // CRITICAL: Passing a wrong-format file to Engine() causes a JNI SIGABRT
-    // (the native layer embeds raw model bytes in the error message, which
-    // contains invalid UTF-8, and Android's JNI checker calls abort()).
-    // We MUST reject bad files here before ever touching the native engine.
-    //
-    // Known-bad magic: 0xF1 0x37 0x71 0x54 (the file our download URL served).
-    // Known GGUF magic: 0x47 0x47 0x55 0x46 = "GGUF".
-    // Known TFLite:     0x?? ?? ?? ?? at offset 0, "TFL3" at offset 4.
-    // Valid .litertlm:  FlatBuffer with "LITM" or similar identifier at offset 4.
-    //
-    // Strategy: reject any file whose first 4 bytes are NOT a plausible
-    // FlatBuffer root offset, or that matches a known-bad prefix.
-    // ─────────────────────────────────────────────────────────────────────────
 
     sealed class ValidationResult {
         object Ok : ValidationResult()
@@ -60,59 +50,37 @@ class PharosLiteRTModule(private val context: Context) {
 
     private fun validateModelFile(modelPath: String): ValidationResult {
         val file = File(modelPath)
-
         if (!file.exists()) return ValidationResult.Err("Model file not found at $modelPath")
 
         val size = file.length()
-        // < 2 GB is definitely wrong — a real Gemma 4 E2B model is ~2.59 GB.
         if (size < 2_000_000_000L) {
             return ValidationResult.Err(
                 "Model file too small (${size / 1024 / 1024} MB, expected ~2590 MB). " +
-                "The download was likely interrupted. Tap 'Re-download' to try again."
+                "The download was likely interrupted. Tap Re-download to try again."
             )
         }
 
         val header = ByteArray(8)
-        try {
-            file.inputStream().use { it.read(header) }
-        } catch (e: Exception) {
-            return ValidationResult.Err("Cannot read model file: ${e.message}")
-        }
+        try { file.inputStream().use { it.read(header) } }
+        catch (e: Exception) { return ValidationResult.Err("Cannot read model: ${e.message}") }
 
-        // Reject GGUF (llama.cpp magic "GGUF" = 0x47 0x47 0x55 0x46)
+        // Reject GGUF (llama.cpp format, incompatible)
         if (header[0] == 0x47.toByte() && header[1] == 0x47.toByte() &&
             header[2] == 0x55.toByte() && header[3] == 0x46.toByte()) {
-            return ValidationResult.Err(
-                "GGUF format detected. LiteRT-LM requires .litertlm format, not GGUF. " +
-                "Delete and re-download from the correct URL."
-            )
+            return ValidationResult.Err("GGUF format detected. Download the .litertlm model.")
         }
 
-        // Reject HTML / JSON error pages from failed downloads.
-        val headerStr = String(header, Charsets.ISO_8859_1)
-        if (headerStr.startsWith("<!") || headerStr.startsWith("<h") ||
-            headerStr.startsWith("{\"") || headerStr.startsWith("ver")) {
-            return ValidationResult.Err(
-                "Downloaded file is a text/HTML error response, not a model. " +
-                "Delete and re-download."
-            )
+        // Reject HTML/JSON error pages
+        val s = String(header, Charsets.ISO_8859_1)
+        if (s.startsWith("<!") || s.startsWith("<h") || s.startsWith("{\"") || s.startsWith("ver")) {
+            return ValidationResult.Err("Downloaded file is an error page. Delete and re-download.")
         }
 
-        // NOTE: We do NOT check for specific .litertlm magic bytes here because
-        // the flatbuffer root offset in the first 4 bytes varies by model and
-        // build.  The engine itself is the authoritative format checker.
-        // The important thing is that the runtime version (0.0.4-experimental)
-        // matches the model version on HuggingFace.  Using "latest.release"
-        // of the runtime with these models causes "Invalid magic number".
-
-        Log.i(tag, "Pre-flight OK: size=${size / 1024 / 1024} MB")
+        Log.i(tag, "Pre-flight OK: ${size / 1024 / 1024} MB")
         return ValidationResult.Ok
     }
 
-    // ── Initialize engine ─────────────────────────────────────────────────────
-
-    // Tracks which backend is actually running (reported back to Dart/UI).
-    @Volatile var activeBackend: String = "unknown"
+    // ── Initialize engine (GPU → CPU fallback) ────────────────────────────────
 
     fun initialize(
         modelPath: String,
@@ -121,20 +89,18 @@ class PharosLiteRTModule(private val context: Context) {
         onError: (String) -> Unit,
     ) {
         scope.launch {
-            // ── Pre-flight ────────────────────────────────────────────────────
             when (val v = validateModelFile(modelPath)) {
                 is ValidationResult.Err -> {
-                    Log.e(tag, "Validation failed: ${v.reason}")
                     withContext(Dispatchers.Main) { onError(v.reason) }
                     return@launch
                 }
-                ValidationResult.Ok -> Log.i(tag, "Validation OK, starting engine")
+                ValidationResult.Ok -> Log.i(tag, "Validation OK")
             }
 
-            // ── GPU → CPU fallback ────────────────────────────────────────────
-            // Some Adreno / Mali drivers fail to compile the LiteRT kernel at
-            // runtime (litert_compiled_model_executor.cc INIT_FAILED).  We try
-            // GPU first, then silently fall back to CPU so the app always works.
+            // Try GPU first, fall back to CPU silently.
+            // IMPORTANT: visionBackend must be set — without it the vision
+            // inference delegate is null and crashes with SIGSEGV during image
+            // processing (fault addr 0x0 in liblitertlm_jni.so).
             val backendsToTry: List<Pair<String, Backend>> = if (settings.useGpu)
                 listOf("GPU" to Backend.GPU(), "CPU" to Backend.CPU())
             else
@@ -146,45 +112,43 @@ class PharosLiteRTModule(private val context: Context) {
                 try {
                     Log.i(tag, "Trying $backendName backend…")
 
+                    // ── FIX 1: visionBackend MUST be set for image inference ──
+                    // Without this the vision delegate is a null pointer and any
+                    // call that passes a Content.ImageBytes will SIGSEGV.
+                    // CPU is the safe choice here; GPU vision can be re-enabled
+                    // once the main GPU backend works on this device.
                     val engineConfig = EngineConfig(
-                        modelPath  = modelPath,
-                        backend    = backend,
-                        cacheDir   = context.cacheDir.path,
+                        modelPath    = modelPath,
+                        backend      = backend,
+                        visionBackend = Backend.CPU(),   // ← was missing, caused crash
+                        cacheDir     = context.cacheDir.path,
                         maxNumTokens = settings.maxTokens,
                     )
 
                     val eng = Engine(engineConfig)
                     eng.initialize()
 
-                    // ── Success ───────────────────────────────────────────────
                     engine = eng
                     activeBackend = backendName
                     Log.i(tag, "Engine initialised on $backendName")
 
                     createConversation(settings)
-                    val usedCpu = (backendName == "CPU")
-                    withContext(Dispatchers.Main) { onSuccess(usedCpu) }
+                    withContext(Dispatchers.Main) { onSuccess(backendName == "CPU") }
                     return@launch
 
                 } catch (e: Exception) {
-                    // Sanitise — the error message may contain raw binary bytes
-                    // from the model file that trigger a second JNI crash if
-                    // passed back to Java/Dart as-is.
                     val safeMsg = e.message
                         ?.replace(Regex("[^\\x20-\\x7E]"), "?")
                         ?.take(300)
-                        ?: "unknown error"
+                        ?: "unknown"
                     lastError = "$backendName failed: $safeMsg"
                     Log.w(tag, lastError)
-
-                    // Clean up any partial state before trying the next backend.
                     try { engine?.close() } catch (_: Exception) {}
                     engine = null
                 }
             }
 
-            // All backends exhausted.
-            Log.e(tag, "Engine init failed: $lastError")
+            Log.e(tag, "Engine init exhausted: $lastError")
             withContext(Dispatchers.Main) { onError(lastError) }
         }
     }
@@ -204,23 +168,24 @@ class PharosLiteRTModule(private val context: Context) {
         val eng = engine ?: return
         val config = ConversationConfig(
             systemInstruction = Contents.of(
-                "You are a helpful pharmaceutical packaging verifier."
+                // Full pharmaceutical analysis system prompt — matches
+                // kPharosSystemPrompt in pharos_prompts.dart.
+                Content.Text(PHAROS_SYSTEM_PROMPT),
             ),
             samplerConfig = SamplerConfig(
-                topK = settings.topK,
-                topP = settings.topP.toDouble(),
+                topK        = settings.topK,
+                topP        = settings.topP.toDouble(),
                 temperature = settings.temperature.toDouble(),
             ),
         )
         conversation = eng.createConversation(config)
-        Log.i(tag, "Conversation created (topK=${settings.topK} temp=${settings.temperature})")
+        Log.i(tag, "Conversation created topK=${settings.topK} temp=${settings.temperature}")
     }
 
     // ── Vision inference ──────────────────────────────────────────────────────
 
     fun analyzeImage(
         imageBytes: ByteArray,
-        systemPrompt: String,
         userPrompt: String,
         onToken: (String) -> Unit,
         onDone: () -> Unit,
@@ -228,26 +193,40 @@ class PharosLiteRTModule(private val context: Context) {
     ) {
         scope.launch {
             try {
+                // ── Reset conversation before every scan ──────────────────────
+                // Without this, each scan appends to the previous conversation
+                // history and the model produces garbled / non-JSON output.
+                conversation?.close()
+                createConversation(PharosSettings())
                 val conv = conversation
-                    ?: throw IllegalStateException("Session not ready — call initialize() first")
+                    ?: throw IllegalStateException("Could not create conversation")
+
+                // Convert JPEG → PNG (Gallery always passes PNG to Content.ImageBytes)
+                val pngBytes = jpegToPng(imageBytes)
+                    ?: throw IllegalArgumentException("Could not decode camera image")
+                Log.i(tag, "Image: ${imageBytes.size} B JPEG → ${pngBytes.size} B PNG")
+
+                // Image FIRST, text AFTER (matches Gallery ordering)
+                val contents = mutableListOf<Content>()
+                contents.add(Content.ImageBytes(pngBytes))
+                contents.add(Content.Text(userPrompt))
 
                 val callback = object : MessageCallback {
-                    private var lastSentLength = 0
-
+                    // message.toString() returns the NEW CHUNK for each call
+                    // (Gallery uses it directly — no delta tracking needed).
+                    // Our old delta-tracking dropped nearly every token because
+                    // each chunk is ~1 char and chunk.length never exceeded lastLen.
                     override fun onMessage(message: Message) {
-                        // In 0.11.0, Message might not have a .text property directly.
-                        // Using toString() for now to avoid compilation errors, 
-                        // but tracking deltas to keep UI smooth.
-                        val fullText = message.toString()
-                        if (fullText.length > lastSentLength) {
-                            val delta = fullText.substring(lastSentLength)
-                            lastSentLength = fullText.length
-                            scope.launch(Dispatchers.Main) { onToken(delta) }
+                        val chunk = message.toString()
+                        if (chunk.isNotEmpty()) {
+                            scope.launch(Dispatchers.Main) { onToken(chunk) }
                         }
                     }
+
                     override fun onDone() {
                         scope.launch(Dispatchers.Main) { onDone() }
                     }
+
                     override fun onError(throwable: Throwable) {
                         val msg = throwable.message
                             ?.replace(Regex("[^\\x20-\\x7E]"), "?")
@@ -257,18 +236,26 @@ class PharosLiteRTModule(private val context: Context) {
                     }
                 }
 
-                conv.sendMessageAsync(
-                    Contents.of(
-                        Content.ImageBytes(imageBytes),
-                        Content.Text(userPrompt),
-                    ),
-                    callback,
-                )
+                conv.sendMessageAsync(Contents.of(contents), callback)
+
             } catch (e: Exception) {
-                Log.e(tag, "Inference failed: ${e.message}", e)
-                withContext(Dispatchers.Main) { onError(e.message ?: "Inference failed") }
+                Log.e(tag, "analyzeImage failed: ${e.message}", e)
+                val msg = e.message?.replace(Regex("[^\\x20-\\x7E]"), "?")?.take(200) ?: "Failed"
+                withContext(Dispatchers.Main) { onError(msg) }
             }
         }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /** Decode JPEG bytes to Bitmap then re-encode as lossless PNG. */
+    private fun jpegToPng(jpegBytes: ByteArray): ByteArray? {
+        val bitmap: Bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
+            ?: return null
+        val out = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        bitmap.recycle()
+        return out.toByteArray()
     }
 
     // ── Cleanup ───────────────────────────────────────────────────────────────
@@ -279,7 +266,49 @@ class PharosLiteRTModule(private val context: Context) {
             engine?.close()
             scope.cancel()
         } catch (e: Exception) {
-            Log.e(tag, "Dispose error: ${e.message}", e)
+            Log.e(tag, "Dispose: ${e.message}", e)
         }
+    }
+
+    // ── System prompt (mirrors pharos_prompts.dart) ───────────────────────────
+
+    companion object {
+        private const val PHAROS_SYSTEM_PROMPT = """
+You are an expert pharmaceutical verification AI specialising in Indian and global medicine packaging. Analyse the blister pack or medicine packaging shown in the image and return ONLY a valid JSON object — no markdown, no extra text.
+
+━━━ SEAL ASSESSMENT RULE (most important) ━━━
+A blister pack's tamper-evident seal is the FOIL BACKING on the reverse side.
+• If the foil backing is VISIBLE and UNBROKEN → seal_intact = true, tamper_evident_seal = true
+• Only mark seal_intact = false if you can CLEARLY see torn foil, punctured cavities, or missing backing
+• Default to true when uncertain — do not penalise for image angle or partial visibility
+
+━━━ HOLOGRAM RULE ━━━
+Many legitimate Indian generic medicines (Cipla, Sun Pharma, Mankind, etc.) do NOT carry holograms.
+• Absence of hologram is NOT a counterfeit indicator for Indian brands
+• hologram_detected = false is NORMAL and does NOT increase risk score
+
+━━━ RISK SCORING GUIDE ━━━
+Assign LOW (0-30) when: text is readable, packaging is intact, manufacturer is recognisable
+Assign MODERATE (31-65) ONLY when: print quality is genuinely poor, OR text is partially illegible, OR manufacturer is completely unknown
+Assign HIGH (66-84) when: multiple red flags — blurry text AND suspicious colour AND wrong batch format
+Assign CRITICAL (85-100): clear counterfeiting evidence, known-bad batch
+
+A blister pack with readable text, intact foil, and a known manufacturer MUST score LOW.
+
+━━━ COMMON LEGITIMATE INDIAN MANUFACTURERS ━━━
+Cipla, Cipla Ltd, Sun Pharma, Sun Pharmaceutical, Zydus, Dr Reddy's, Lupin, Torrent, Alkem, Mankind, Intas, Abbott India, Pfizer India, GSK India, Cadila, Wockhardt, Emcure, Macleods, Hetero, Aurobindo, Micro Labs, FDC, Elder, Aristo
+
+━━━ INDIAN BATCH CODE PATTERNS (mark format_valid = true for these) ━━━
+Cipla: alphanumeric like AZEE500, AZ2024B, B245190
+Sun: SUN + digits, or 6-8 alphanumeric chars
+Others: 4-12 alphanumeric characters are almost always valid
+
+━━━ OCR TIPS ━━━
+Read text carefully. Common medicines visible on Indian blister packs:
+Azithromycin (brand: AZEE, Azithral, Zithromax), Amoxicillin, Metformin, Amlodipine, Atorvastatin, Cetirizine, Pantoprazole, Paracetamol, Dolo, Calpol
+
+Return ONLY this JSON structure (fill every field, no null unless stated):
+{"medicine_name":"<brand/generic name>","batch_code":{"extracted":"<code or UNKNOWN>","format_valid":true,"format_error":null,"registry_match":null},"expiry_date":{"extracted":"<date or UNKNOWN>","format_valid":true,"not_expired":true},"manufacturer":{"extracted":"<name>","region_inferred":"<EU|India|US|Other|Unknown>","name_legible":true},"security":{"hologram_detected":false,"hologram_intact":false,"tamper_evident_seal":true,"seal_intact":true},"visual_anomalies":[],"risk_score":10,"risk_level":"LOW","flags":[],"confidence":0.85,"analysis_notes":"<one factual sentence about the packaging>","image_quality_ok":true}
+"""
     }
 }

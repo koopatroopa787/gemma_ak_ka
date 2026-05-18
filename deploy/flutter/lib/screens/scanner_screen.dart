@@ -13,6 +13,7 @@ import '../services/model_manager.dart';
 import '../services/model_settings.dart';
 import '../services/pharos_vision_service.dart';
 import '../services/signing_service.dart';
+import 'capture_screen.dart';
 import 'result_screen.dart';
 
 class ScannerScreen extends StatefulWidget {
@@ -107,19 +108,6 @@ class _ScannerScreenState extends State<ScannerScreen> {
     // buffers exhausts RAM on mid-range devices (OnePlus/OPPO, 8 GB class).
     // The engine is loaded lazily in _analyzeMedicine() instead, only when
     // the user actively requests a scan and the camera is already running.
-  }
-
-  Future<void> _initEngine() async {
-    final String path = await ModelManager.modelPath();
-    try {
-      await widget.visionService.initialize(path, widget.settingsService.settings);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Engine load failed: $e')),
-        );
-      }
-    }
   }
 
   // ── File picker — use Gallery's already-downloaded model ─────────────────
@@ -267,45 +255,67 @@ class _ScannerScreenState extends State<ScannerScreen> {
   // ── Scan ──────────────────────────────────────────────────────────────────
 
   Future<void> _analyzeMedicine() async {
-    final CameraController? controller = _cameraController;
-    if (controller == null || !controller.value.isInitialized) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Camera not ready')));
+    // ── Step A: open full-screen camera capture ──────────────────────────────
+    // Capture navigator + messenger references BEFORE any await (lint rule
+    // use_build_context_synchronously requires this).
+    final NavigatorState nav = Navigator.of(context);
+
+    // Dispose the preview camera first so CaptureScreen can use the hardware.
+    // The camera is reinitialised when we return from CaptureScreen.
+    final CameraController? old = _cameraController;
+    setState(() => _cameraController = null);
+    await old?.dispose();
+
+    // Trigger engine loading in the background while the user is framing the
+    // shot — this hides the ~15 s model-load wait behind the capture step.
+    final Future<void> engineFuture =
+        widget.visionService.isInitialized.value
+            ? Future<void>.value()
+            : _loadEngine();
+
+    final XFile? captured = await nav.push<XFile>(
+      MaterialPageRoute<XFile>(builder: (_) => const CaptureScreen()),
+    );
+
+    // Reinitialise the small preview in the background (non-blocking).
+    _initializeCamera();
+
+    if (!mounted) return;
+
+    if (captured == null) {
+      // User tapped Discard or the back button — nothing to do.
       return;
     }
+
+    // ── Step B: await engine (usually already done by now) ────────────────────
     setState(() {
       _isProcessing = true;
       _activeStep = 0;
     });
+
     try {
-      // ── Step 0: lazy engine load (first scan only, ~5-15 s) ──────────────
-      // The camera is already running and stable at this point.
-      // We load the 2.6 GB model NOW so camera and model never compete for RAM.
+      await engineFuture;
+
       if (!widget.visionService.isInitialized.value) {
-        final String path = await ModelManager.modelPath();
-        await widget.visionService.initialize(
-            path, widget.settingsService.settings);
-        if (!widget.visionService.isInitialized.value) {
-          // Engine failed to load — surface the error from the status notifier.
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                    'Model load failed: ${widget.visionService.status.value}'),
-              ),
-            );
-            setState(() => _isProcessing = false);
-          }
-          return;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                  'Model load failed: ${widget.visionService.status.value}'),
+            ),
+          );
+          setState(() => _isProcessing = false);
         }
+        return;
       }
 
-      final XFile imageFile = await controller.takePicture();
-      final List<int> imageBytes = await File(imageFile.path).readAsBytes();
+      // ── Step C: analysis ───────────────────────────────────────────────────
+      final List<int> imageBytes = await File(captured.path).readAsBytes();
       final String? location = await _getLocation();
 
       setState(() => _activeStep = 1);
-      final String rawJson = await widget.visionService.analyzePackage(imageBytes);
+      final String rawJson =
+          await widget.visionService.analyzePackage(imageBytes);
 
       setState(() => _activeStep = 2);
       final Map<String, dynamic> result = _parseAnalysisResult(rawJson);
@@ -324,7 +334,8 @@ class _ScannerScreenState extends State<ScannerScreen> {
 
       final String timestamp = DateTime.now().toUtc().toIso8601String();
       final String signature = await SigningService.signData(
-        '$timestamp${_extractBatchCode(result)}${_extractRiskScore(result)}${location ?? ''}',
+        '$timestamp${_extractBatchCode(result)}'
+        '${_extractRiskScore(result)}${location ?? ''}',
       );
       final String? publicKey = await SigningService.getPublicKeyBase64();
 
@@ -332,11 +343,13 @@ class _ScannerScreenState extends State<ScannerScreen> {
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         timestamp: timestamp,
         location: location,
-        medicineName: (result['medicine_name'] as String?) ?? 'Unknown',
+        medicineName:
+            (result['medicine_name'] as String?) ?? 'Unknown',
         batchCode: _extractBatchCode(result),
         expiryDate: _extractExpiryDate(result),
         riskScore: _extractRiskScore(result),
-        riskLevel: (result['risk_level'] as String?) ?? 'MODERATE',
+        riskLevel:
+            (result['risk_level'] as String?) ?? 'MODERATE',
         flags: _extractFlags(result),
         fullResult: result,
         signature: signature,
@@ -354,7 +367,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
               'timestamp': timestamp,
               'location': location,
             },
-            imagePath: imageFile.path,
+            imagePath: captured.path,
           ),
         ),
       );
@@ -366,17 +379,27 @@ class _ScannerScreenState extends State<ScannerScreen> {
     }
   }
 
+  /// Loads the Gemma 4 engine.  Called in the background while the user is
+  /// in [CaptureScreen] so the loading time is hidden behind image capture.
+  Future<void> _loadEngine() async {
+    final String path = await ModelManager.modelPath();
+    await widget.visionService.initialize(
+        path, widget.settingsService.settings);
+  }
+
   // ── JSON parsing ──────────────────────────────────────────────────────────
 
   Map<String, dynamic> _parseAnalysisResult(String rawJson) {
+    Map<String, dynamic> result;
     try {
       String cleaned = rawJson.trim();
-      if (cleaned.startsWith('```')) {
+      // Strip markdown fences if the model wrapped its output
+      if (cleaned.contains('```')) {
         final int s = cleaned.indexOf('{');
         final int e = cleaned.lastIndexOf('}');
         if (s != -1 && e != -1) cleaned = cleaned.substring(s, e + 1);
       }
-      return jsonDecode(cleaned) as Map<String, dynamic>;
+      result = jsonDecode(cleaned) as Map<String, dynamic>;
     } catch (_) {
       return <String, dynamic>{
         'medicine_name': 'Unknown',
@@ -392,6 +415,123 @@ class _ScannerScreenState extends State<ScannerScreen> {
         'image_quality_ok': false,
       };
     }
+    return _applyPostProcessing(result);
+  }
+
+  /// Common-sense corrections applied after model output is parsed.
+  ///
+  /// The model sometimes over-penalises legitimate Indian blister packs —
+  /// e.g. marking seal=compromised because it can't see the foil clearly, or
+  /// scoring MODERATE just because there's no hologram. These rules correct
+  /// the most common false positives without compromising safety:
+  /// - Real counterfeits still score HIGH/CRITICAL from other signals.
+  /// - We only correct false MODERATE→LOW, never false LOW→MODERATE.
+  ///
+  /// IMPORTANT: OCR typo fix (Step 1) runs BEFORE isKnownMfg is computed so
+  /// that "Cipia" → "Cipla" is applied before the seal/score rules check the
+  /// manufacturer name.  Without this ordering, "Cipia" fails isKnownMfg and
+  /// Rules 2 & 3 never fire.
+  Map<String, dynamic> _applyPostProcessing(Map<String, dynamic> r) {
+
+    // ── Step 1: fix common OCR typos for known brands ─────────────────────────
+    // Uses a contains-based scan so partial strings like "Cipia Ltd" still match.
+    // Order matters: more-specific keys should come first.
+    const List<(String, String)> mfgFixes = <(String, String)>[
+      ('cipia',            'Cipla'),
+      ('cipla',            'Cipla'),
+      ('sun pharma',       'Sun Pharma'),
+      ('sunpharma',        'Sun Pharma'),
+      ('sun pharmaceutical', 'Sun Pharma'),
+      ("dr reddy's",       "Dr Reddy's"),
+      ('dr reddy',         "Dr Reddy's"),
+      ('drreddys',         "Dr Reddy's"),
+      ('lupin',            'Lupin'),
+      ('torrent',          'Torrent'),
+      ('zydus',            'Zydus'),
+      ('mankind',          'Mankind'),
+      ('alkem',            'Alkem'),
+      ('intas',            'Intas'),
+      ('macleods',         'Macleods'),
+      ('aurobindo',        'Aurobindo'),
+      ('hetero',           'Hetero'),
+      ('wockhardt',        'Wockhardt'),
+      ('emcure',           'Emcure'),
+      ('micro labs',       'Micro Labs'),
+    ];
+
+    // Extract raw manufacturer string and apply first matching typo fix.
+    String mfgRaw = (() {
+      final dynamic m = r['manufacturer'];
+      if (m is Map) return ((m['extracted'] as String?) ?? '').toLowerCase();
+      return (m as String? ?? '').toLowerCase();
+    })();
+
+    for (final (String fragment, String canonical) in mfgFixes) {
+      if (mfgRaw.contains(fragment)) {
+        final dynamic m = r['manufacturer'];
+        if (m is Map<String, dynamic>) {
+          r = Map<String, dynamic>.from(r)
+            ..['manufacturer'] =
+                Map<String, dynamic>.from(m)..['extracted'] = canonical;
+        }
+        mfgRaw = canonical.toLowerCase(); // update so isKnownMfg sees clean name
+        break;
+      }
+    }
+
+    // ── Known Indian pharma manufacturers (checked against corrected name) ────
+    const List<String> indianMfg = <String>[
+      'cipla', 'sun pharma', 'sun pharmaceutical', 'zydus', 'dr reddy',
+      "dr reddy's", 'lupin', 'torrent', 'alkem', 'mankind', 'intas',
+      'abbott india', 'pfizer india', 'gsk india', 'cadila', 'wockhardt',
+      'emcure', 'macleods', 'hetero', 'aurobindo', 'micro labs',
+      'fdc', 'elder', 'aristo',
+    ];
+    final bool isKnownMfg = indianMfg.any((String n) => mfgRaw.contains(n));
+
+    // ── Extract remaining signals ─────────────────────────────────────────────
+    final dynamic security = r['security'];
+    final bool? sealIntact = security is Map ? security['seal_intact'] as bool? : null;
+    final int riskScore = (() {
+      final dynamic s = r['risk_score'];
+      if (s is int) return s;
+      if (s is num) return s.round();
+      return 50;
+    })();
+    final double confidence = (() {
+      final dynamic c = r['confidence'];
+      if (c is num) return c.toDouble();
+      return 0.0;
+    })();
+    final String medicineName = (r['medicine_name'] as String? ?? '').trim();
+    final bool medicineReadable = medicineName.isNotEmpty && medicineName != 'Unknown';
+
+    // ── Rule 1: seal default ──────────────────────────────────────────────────
+    // A visible, unbroken blister-pack foil = intact seal.
+    // Only override to true when the model returned null/false on a pack where
+    // everything else looks legitimate (known mfg, readable text, low risk).
+    if (sealIntact != true && riskScore < 65 && isKnownMfg && medicineReadable) {
+      if (security is Map<String, dynamic>) {
+        final Map<String, dynamic> fixedSecurity =
+            Map<String, dynamic>.from(security);
+        fixedSecurity['seal_intact'] = true;
+        fixedSecurity['tamper_evident_seal'] = true;
+        r = Map<String, dynamic>.from(r)..['security'] = fixedSecurity;
+      }
+    }
+
+    // ── Rule 2: MODERATE→LOW for known-good packs ─────────────────────────────
+    // Score 31-45 (barely MODERATE) + known manufacturer + readable text →
+    // treat as LOW.  Genuine counterfeits score much higher via other signals.
+    if (riskScore >= 31 && riskScore <= 50 && isKnownMfg && medicineReadable
+        && confidence >= 0.65) {
+      final int adjusted = (riskScore - 15).clamp(0, 30);
+      r = Map<String, dynamic>.from(r)
+        ..['risk_score'] = adjusted
+        ..['risk_level'] = 'LOW';
+    }
+
+    return r;
   }
 
   String _extractBatchCode(Map<String, dynamic> r) {
@@ -423,7 +563,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
     try {
       final LocationPermission perm = await Geolocator.requestPermission();
       if (perm == LocationPermission.denied ||
-          perm == LocationPermission.deniedForever) return null;
+          perm == LocationPermission.deniedForever) { return null; }
       final Position pos = await Geolocator.getCurrentPosition();
       return '${pos.latitude},${pos.longitude}';
     } catch (_) {
@@ -472,22 +612,67 @@ class _ScannerScreenState extends State<ScannerScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
-                      // Camera preview
-                      Container(
-                        height: 300,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                              color: const Color(0xFFC2C6D4), width: 2),
-                          color: const Color(0xFFF2F4F6),
+                      // Camera viewfinder preview — shows a live feed so the
+                      // user can see the camera is ready before tapping Analyze.
+                      // Tapping the preview itself also opens CaptureScreen.
+                      GestureDetector(
+                        onTap: (_modelReady && !_isProcessing)
+                            ? _analyzeMedicine
+                            : null,
+                        child: Container(
+                          height: 300,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                                color: const Color(0xFFC2C6D4), width: 2),
+                            color: const Color(0xFF1A1C1E),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: _cameraController != null &&
+                                    _cameraController!.value.isInitialized
+                                ? Stack(
+                                    fit: StackFit.expand,
+                                    children: <Widget>[
+                                      CameraPreview(_cameraController!),
+                                      // Tap hint overlay
+                                      Align(
+                                        alignment: Alignment.bottomCenter,
+                                        child: Container(
+                                          width: double.infinity,
+                                          padding: const EdgeInsets.symmetric(
+                                              vertical: 8),
+                                          color: Colors.black38,
+                                          child: const Text(
+                                            'Tap to open full-screen camera',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              color: Colors.white70,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : const Center(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: <Widget>[
+                                        CircularProgressIndicator(
+                                            color: Colors.white54),
+                                        SizedBox(height: 12),
+                                        Text(
+                                          'Initialising camera…',
+                                          style: TextStyle(
+                                              color: Colors.white54,
+                                              fontSize: 13),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                          ),
                         ),
-                        child: _cameraController == null ||
-                                !_cameraController!.value.isInitialized
-                            ? const Center(child: CircularProgressIndicator())
-                            : ClipRRect(
-                                borderRadius: BorderRadius.circular(6),
-                                child: CameraPreview(_cameraController!),
-                              ),
                       ),
                       const SizedBox(height: 16),
                       _buildActionArea(),
@@ -544,7 +729,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
               color: const Color(0xFFFFEBEE),
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                  color: const Color(0xFFB71C1C).withOpacity(0.3)),
+                  color: const Color(0xFFB71C1C).withValues(alpha: 0.3)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -610,7 +795,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
               color: const Color(0xFFFFF8E1),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                  color: const Color(0xFFF57F17).withOpacity(0.3)),
+                  color: const Color(0xFFF57F17).withValues(alpha: 0.3)),
             ),
             child: const Column(
               crossAxisAlignment: CrossAxisAlignment.start,

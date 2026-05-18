@@ -32,14 +32,21 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        // EventChannel — Dart side opens a broadcast stream and receives tokens
+        // EventChannel — Dart side opens a broadcast stream and receives tokens.
+        // IMPORTANT: onCancel is called if the user briefly navigates away mid-
+        // inference (e.g. notification pull-down).  We keep the last sink alive
+        // so tokens generated while the stream is "cancelled" are not silently
+        // dropped.  The screen is locked to portrait (AndroidManifest) to prevent
+        // activity recreation during inference, but this is a safety net.
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, eventChannelName)
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
                     eventSink = events
                 }
                 override fun onCancel(arguments: Any?) {
-                    eventSink = null
+                    // Don't null the sink — inference may still be running on the
+                    // background thread.  Dart will re-subscribe on next analyzeImage call.
+                    // eventSink = null  ← intentionally commented out
                 }
             })
 
@@ -77,9 +84,10 @@ class MainActivity : FlutterActivity() {
 
                     // ── analyzeImage ────────────────────────────────────────
                     "analyzeImage" -> {
-                        val imageBytes    = call.argument<ByteArray>("imageBytes")
-                        val systemPrompt  = call.argument<String>("systemPrompt") ?: ""
-                        val userPrompt    = call.argument<String>("userPrompt")   ?: ""
+                        val imageBytes = call.argument<ByteArray>("imageBytes")
+                        // systemPrompt is now baked into ConversationConfig.systemInstruction
+                        // at engine init time — no longer passed per-call.
+                        val userPrompt = call.argument<String>("userPrompt") ?: ""
 
                         if (imageBytes == null) {
                             return@setMethodCallHandler result.error(
@@ -87,9 +95,8 @@ class MainActivity : FlutterActivity() {
                         }
 
                         module.analyzeImage(
-                            imageBytes   = imageBytes,
-                            systemPrompt = systemPrompt,
-                            userPrompt   = userPrompt,
+                            imageBytes = imageBytes,
+                            userPrompt = userPrompt,
                             onToken = { token ->
                                 mainHandler.post {
                                     eventSink?.success(

@@ -249,7 +249,11 @@ class _ResultScreenState extends State<ResultScreen> {
                   Expanded(
                     child: _detailCard(
                       'Seal',
-                      _sealIntact() == true ? 'Intact' : 'Compromised',
+                      _sealIntact() == true
+                          ? 'Intact ✓'
+                          : _sealIntact() == false
+                              ? 'Compromised ⚠'
+                              : 'Not assessed',
                     ),
                   ),
                 ],

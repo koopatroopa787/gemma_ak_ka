@@ -1,0 +1,90 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+*.env
+
+# ── Jupyter ───────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+
+# ── Model weights & fine-tuned adapters ──────────────────────────────────────
+# These are large binary files — download from HuggingFace instead.
+pharos_gemma4_final/
+pharos_gemma4_final_v2/
+pharos_gemma4_finetuned/
+unsloth_compiled_cache/
+models/
+*.gguf
+*.litertlm
+*.safetensors
+*.bin
+*.pt
+*.ckpt
+
+# ── Dataset images ────────────────────────────────────────────────────────────
+# Sample images are in the README / HuggingFace dataset — not in the repo.
+data/authentic/
+data/dataset/
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.bmp
+# Keep documentation images if any exist under docs/
+!docs/**/*.png
+!docs/**/*.jpg
+
+# ── Frontend build artifacts ──────────────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+
+# ── Flutter build artifacts ───────────────────────────────────────────────────
+deploy/flutter/build/
+deploy/flutter/.dart_tool/
+deploy/flutter/.flutter-plugins
+deploy/flutter/.flutter-plugins-dependencies
+deploy/flutter/.packages
+# Keep pubspec.lock (reproducible builds)
+
+# ── Android local / generated ─────────────────────────────────────────────────
+deploy/flutter/android/.gradle/
+deploy/flutter/android/local.properties
+deploy/flutter/android/app/debug/
+deploy/flutter/android/app/release/
+deploy/flutter/android/app/profile/
+*.apk
+*.aab
+*.dex
+
+# ── IDE & tooling ─────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+.DS_Store
+Thumbs.db
+.claude/
+
+# ── pytest & lint caches ──────────────────────────────────────────────────────
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# ── Misc ──────────────────────────────────────────────────────────────────────
+*.log
+*.tmp
+*.bak
+benchmark_results*.json

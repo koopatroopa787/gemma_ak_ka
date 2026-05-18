@@ -113,9 +113,11 @@ class PharosVisionService {
     }
 
     // Wait for the stream to signal done.
+    // CPU inference on Gemma 4 E2B typically takes 1-5 min on mid-range devices.
+    // GPU would be ~30 s but we fall back to CPU. 8 min is generous but safe.
     final String result = await completer.future.timeout(
-      const Duration(minutes: 3),
-      onTimeout: () => throw TimeoutException('Model did not respond in 3 min'),
+      const Duration(minutes: 8),
+      onTimeout: () => throw TimeoutException('Model did not respond in 8 min'),
     );
 
     await sub.cancel();

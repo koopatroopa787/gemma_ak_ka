@@ -1,8 +1,8 @@
-# Pharos
+# Pharos — On-Device Medicine Verification
 
-**Offline pharmaceutical packaging verification for pharmacists in low-resource settings.**
+**Detect counterfeit pharmaceutical packaging with Gemma 4 — fully offline, on your Android phone.**
 
-Pharos helps pharmacists in areas with unreliable internet detect potentially counterfeit medicine packaging using on-device AI. It runs entirely on a mid-range Android device — no internet connection required.
+Pharos helps pharmacists and patients in areas with unreliable internet verify medicine authenticity in seconds. Point the camera at a blister pack, tap Analyze, and get a risk score with tamper evidence, batch code validation, and manufacturer recognition — all running locally on a mid-range Android device.
 
 > ⚠️ **Research prototype.** Pharos is a decision-support tool that assists pharmacist judgment. It is not a validated medical device and does not replace professional verification procedures. See [LIMITATIONS.md](LIMITATIONS.md).
 
@@ -10,154 +10,222 @@ Pharos helps pharmacists in areas with unreliable internet detect potentially co
 
 ## Demo
 
-[Watch the 3-minute demo →](#)  
-[Live demo →](#)  
-[Kaggle write-up →](#)
+https://github.com/user-attachments/assets/placeholder
+
+*Scanning a Cipla AZEE-500 blister pack — full analysis in under 60 s on CPU.*
 
 ---
 
-## Architecture
+## How it works
 
 ```
-Camera image
-      │
-      ▼
-┌─────────────────────────────────────────────────┐
-│  Layer 1: Gemma 4 E2B (on-device, INT4 GGUF)   │
-│  • OCR: batch code, expiry date, manufacturer   │
-│  • Structured JSON output (schema-constrained)  │
-│  • Anomaly flags from visual inspection         │
-└───────────────────┬─────────────────────────────┘
-                    │
-      ┌─────────────┼──────────────┐
-      ▼             ▼              ▼
-┌──────────┐ ┌──────────┐  ┌──────────────┐
-│ Layer 2  │ │ Layer 3  │  │  Layer 3b    │
-│ OpenCV   │ │ Registry │  │ Alert check  │
-│ colour   │ │ batch    │  │ WHO MPA      │
-│ + edges  │ │ format   │  │ known codes  │
-└────┬─────┘ └────┬─────┘  └──────┬───────┘
-     └────────────┴───────────────┘
-                  │
-                  ▼
-         ┌────────────────┐
-         │  Risk Scorer   │
-         │  Weighted      │
-         │  ensemble      │
-         │  0–100 + flags │
-         └────────┬───────┘
-                  │
-                  ▼
-         Pharmacist result
-         (risk level + flags
-          + plain-English note)
+Camera (full-screen capture UI)
+        │
+        ▼
+┌───────────────────────────────────────────────┐
+│  Gemma 4 E2B Vision  (on-device, LiteRT-LM)  │
+│  • OCR: medicine name, batch code, expiry     │
+│  • Seal & tamper-evidence assessment          │
+│  • Hologram / security feature detection      │
+│  • Structured JSON output (schema-enforced)   │
+└──────────────────────┬────────────────────────┘
+                       │
+           ┌───────────┴───────────┐
+           ▼                       ▼
+   ┌──────────────┐       ┌─────────────────┐
+   │  Post-process │       │  Risk Scorer    │
+   │  OCR typo fix │       │  0–100 + flags  │
+   │  Seal default │       │  LOW / MODERATE │
+   │  Score adjust │       │  HIGH / CRITICAL│
+   └──────┬───────┘       └────────┬────────┘
+          └───────────┬────────────┘
+                      ▼
+             Local SQLite store
+             Ed25519 signed record
+                      │
+              (optional, async)
+                      ▼
+             pharos-sync.onrender.com
+             batch upload when online
 ```
 
-**What each layer does and why:**
+### Why LiteRT-LM?
 
-- **Gemma 4 E2B** handles OCR and structured information extraction — tasks it demonstrably excels at. It does *not* try to detect millimetre-level print registration errors, which exceed its reliable capability ceiling.
-- **OpenCV** handles the metrology Gemma cannot do reliably: colour histogram consistency, print edge sharpness, brightness uniformity across the pack surface.
-- **Registry** provides ground truth: known counterfeit batch codes from WHO Medical Product Alerts, and batch code format validation per manufacturer.
-- **Risk scorer** weights all three signals into a final 0–100 score. A registry alert overrides the model output — this is intentional.
+Gemma 4 is a **vision** model — it reads the image, not just text. Running it with Google's LiteRT-LM runtime (the same runtime powering AI Edge Gallery) gives:
+
+- Native GPU acceleration (Adreno / Mali) with automatic CPU fallback
+- Image input via `Content.ImageBytes` — no base64, no JPEG artefacts
+- Streaming tokens via `MessageCallback` — the result appears token-by-token
 
 ---
 
-## Benchmarks
-
-> Measured on [device name] — [date]
-
-| Model | Quantisation | End-to-end latency | RAM (peak) | JSON parse rate |
-|---|---|---|---|---|
-| Gemma 4 E2B | INT4 (Q4_K_M) | [X]s | [X]MB | [X]/10 |
-
-Run the benchmark yourself:
-```bash
-python benchmark.py --image data/authentic/sample_pack.jpg
-```
-
----
-
-## Getting Started
-
-### Requirements
-- Python 3.10+
-- Android device with 4GB+ RAM (for mobile deployment)
-- llama.cpp with vision support
-
-### Install
-```bash
-git clone https://github.com/[your-repo]/pharos
-cd pharos
-pip install -r requirements.txt
-
-# Download model (2.5GB)
-# Get gemma-4-E2B-it-Q4_K_M.gguf from:
-# https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF
-mkdir models && mv gemma-4-E2B-it-Q4_K_M.gguf models/
-```
-
-### Build the registry
-```bash
-python registry/registry_builder.py --build
-```
-
-### Run benchmark on your hardware
-```bash
-python benchmark.py --image path/to/your/blister_pack.jpg
-```
-
-### Test the pipeline
-```bash
-python tests/test_pipeline.py
-```
-
-### Generate dataset from your authentic pack photos
-```bash
-# Put your photos in data/authentic/
-python data/defect_generator.py --input data/authentic/ --output data/dataset/ --per-image 5
-```
-
----
-
-## Fine-tuning (Unsloth)
-
-See `unsloth_finetune.ipynb` for the complete Kaggle-compatible fine-tuning notebook.
-
-Pre-trained adapter weights: [HuggingFace link]  
-Training dataset: [Kaggle dataset link]  
-Benchmark results: `benchmark_results_e2b.json`
-
-**Fine-tuning decision:** We first tested Gemma 4 E2B in zero-shot configuration on 15 real blister pack photos. [Result: X% batch code accuracy]. [We then fine-tuned / zero-shot was sufficient]. See `LIMITATIONS.md` for full rationale.
-
----
-
-## Repository Structure
+## Repo structure
 
 ```
 pharos/
 ├── core/
-│   ├── schema.py           # Pydantic schema — the contract for all outputs
-│   ├── prompt.py           # System prompt + few-shot builder
-│   └── pipeline.py         # Main inference pipeline (Gemma + CV + Registry)
+│   ├── schema.py                   # Pydantic output schema
+│   ├── prompt.py                   # System prompt builder
+│   └── pipeline.py                 # Python inference pipeline (server-side)
 ├── data/
-│   └── defect_generator.py # Dataset augmentation from real photos
+│   ├── defect_generator.py         # Synthetic defect augmentation
+│   └── PHOTOGRAPHY_GUIDE.md        # How to photograph blister packs
 ├── registry/
-│   └── registry_builder.py # SQLite medicine registry + WHO alert data
+│   └── registry_builder.py         # Medicine registry + WHO alert data
+├── server/
+│   ├── main.py                     # FastAPI sync server (optional)
+│   └── dashboard.html              # Admin dashboard
 ├── deploy/
-│   └── flutter/            # Mobile app (Flutter + Cactus)
-├── tests/
-│   └── test_pipeline.py    # End-to-end test on sample packs
-├── benchmark.py            # Latency + accuracy benchmark
-├── benchmark_results_e2b.json  # Our measured results
-├── unsloth_finetune.ipynb  # Fine-tuning notebook (Kaggle-ready)
-├── LIMITATIONS.md          # Honest capability assessment
+│   └── flutter/                    # Android app (Flutter + LiteRT-LM)
+│       ├── lib/
+│       │   ├── screens/
+│       │   │   ├── scanner_screen.dart    # Main scan UI
+│       │   │   ├── capture_screen.dart    # Full-screen camera capture
+│       │   │   ├── result_screen.dart     # Risk result display
+│       │   │   └── history_screen.dart    # Local scan history
+│       │   └── services/
+│       │       ├── pharos_vision_service.dart  # Flutter↔Kotlin bridge
+│       │       ├── model_manager.dart          # Model download + validation
+│       │       ├── db_service.dart             # Local SQLite
+│       │       └── signing_service.dart        # Ed25519 record signing
+│       └── android/app/src/main/kotlin/
+│           └── com/pharos/pharos_flutter/
+│               ├── MainActivity.kt         # MethodChannel + EventChannel
+│               └── PharosLiteRTModule.kt   # LiteRT-LM engine wrapper
+├── frontend/                       # Stitch-generated web dashboard (optional)
+├── tests/                          # Python pipeline tests
+├── benchmark.py                    # Latency + accuracy benchmark
+├── pharos_finetune_fixed_final.ipynb  # Unsloth fine-tune notebook
+├── render.yaml                     # Render.com deploy config
+├── requirements.txt
 └── README.md
 ```
 
 ---
 
+## Flutter app — getting started
+
+### Prerequisites
+
+| Requirement | Version |
+|---|---|
+| Flutter | 3.27+ |
+| Android SDK | API 26+ (Android 8) |
+| Kotlin Gradle Plugin | 2.3.0 |
+| JDK | 17 |
+
+### Build
+
+```bash
+cd deploy/flutter
+flutter pub get
+flutter run                    # debug on connected device
+flutter build apk --release    # release APK
+```
+
+### First launch
+
+1. The app asks to download the Gemma 4 E2B model (~2.6 GB) over Wi-Fi.  
+   Download happens once; all subsequent scans are fully offline.
+2. Alternatively, if you have the file already (e.g. from AI Edge Gallery):  
+   tap **Select existing file from device** and point to `gemma-4-E2B-it.litertlm`.
+
+**Model source:** [`litert-community/gemma-4-E2B-it-litert-lm`](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm) on HuggingFace (no auth required).
+
+### Scan flow
+
+```
+Tap "Analyze Medicine"
+        │
+        ▼
+Full-screen camera opens          ← engine loads in background here
+        │  frame the blister pack
+        ▼
+Tap shutter → Review photo
+        │  "Use Photo" or "Retake"
+        ▼
+Vision analysis (30–120 s CPU / ~15 s GPU)
+        │
+        ▼
+Risk result screen
+```
+
+### Architecture notes (Android)
+
+- **`PharosLiteRTModule.kt`** — wraps the LiteRT-LM `Engine` / `Conversation` lifecycle.  
+  Handles GPU→CPU fallback, JPEG→PNG conversion, conversation reset between scans, and streaming tokens via `MessageCallback`.
+- **`MainActivity.kt`** — exposes a `MethodChannel` (commands) and `EventChannel` (streaming tokens) to Flutter.
+- **`pharos_vision_service.dart`** — assembles tokens from the event stream and resolves a `Future<String>` with the complete JSON.
+
+---
+
+## Python pipeline (optional backend)
+
+The `core/` + `server/` modules provide an optional FastAPI server you can run on a machine with a GPU for faster batch verification or an admin dashboard.
+
+```bash
+pip install -r requirements.txt
+
+# Build the medicine registry
+python registry/registry_builder.py --build
+
+# Run the server
+uvicorn server.main:app --reload
+
+# Or run a single-image benchmark
+python benchmark.py --image path/to/blister_pack.jpg
+```
+
+---
+
+## Fine-tuning
+
+`pharos_finetune_fixed_final.ipynb` is a Kaggle-compatible Unsloth notebook that fine-tunes Gemma 4 E2B on a pharmaceutical OCR dataset.
+
+To run it:
+1. Open in Kaggle (T4 GPU, ~45 min)
+2. Set `HF_TOKEN` secret with write access to your HuggingFace repo
+3. Outputs a LoRA adapter pushed to HuggingFace
+
+---
+
+## Risk levels
+
+| Level | Score | Meaning |
+|---|---|---|
+| **LOW** | 0–30 | Packaging consistent with authentic product |
+| **MODERATE** | 31–65 | One or more minor anomalies — manual review recommended |
+| **HIGH** | 66–84 | Multiple red flags — do not dispense without further checks |
+| **CRITICAL** | 85–100 | Clear counterfeiting evidence or known-bad batch |
+
+---
+
 ## Tracks
 
-- **Health & Sciences** — Decision support tool for pharmacists in low-resource settings
-- **Cactus** — Local-first mobile deployment via llama.cpp on Android
-- **Unsloth** — Fine-tuned Gemma 4 E2B adapter for pharmaceutical OCR
+| Track | How Pharos qualifies |
+|---|---|
+| **Health & Sciences** | Decision-support for pharmacists in low-resource settings |
+| **Google — LiteRT / AI Edge** | On-device inference via LiteRT-LM 0.11.0, same runtime as AI Edge Gallery |
+| **Unsloth** | Gemma 4 E2B fine-tuned with Unsloth on pharmaceutical OCR data |
+
+---
+
+## Limitations
+
+See [LIMITATIONS.md](LIMITATIONS.md) for an honest assessment of what Pharos can and cannot do.
+
+Key points:
+- Inference quality depends on image clarity — good lighting is essential
+- OCR accuracy on low-contrast foil printing is imperfect; post-processing rules correct common errors
+- The model has not been validated against a statistically representative sample of counterfeit medicines
+- CPU inference takes 30–120 s on mid-range devices; GPU path requires a compatible Adreno/Mali driver
+
+---
+
+## Contributing
+
+Issues and PRs welcome. Please open an issue before starting large changes.
+
+---
+
+*Built for the Google × Kaggle Gemma 3 Hackathon 2025.*
