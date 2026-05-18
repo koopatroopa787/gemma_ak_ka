@@ -590,51 +590,57 @@ class _ScannerScreenState extends State<ScannerScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               _buildHero(),
-              // Scanner card overlaps hero with negative top margin
-              Container(
-                margin: const EdgeInsets.fromLTRB(16, -24, 16, 0),
-                decoration: BoxDecoration(
-                  color: _kSurface,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: const <BoxShadow>[
-                    BoxShadow(
-                      color: Color(0x0A000000),
-                      blurRadius: 24,
-                      offset: Offset(0, 4),
+              // Scanner card — Transform.translate gives the overlap effect
+              // without a negative Container margin (which Flutter forbids).
+              Transform.translate(
+                offset: const Offset(0, -24),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: _kSurface,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: const <BoxShadow>[
+                        BoxShadow(
+                          color: Color(0x0A000000),
+                          blurRadius: 24,
+                          offset: Offset(0, 4),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    _buildCameraPreview(),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: <Widget>[
-                          _buildActionArea(),
-                          const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: const <Widget>[
-                              Icon(Icons.lock_outline,
-                                  size: 14, color: _kMuted),
-                              SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  'All processing is on-device. No image leaves your phone.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                      fontSize: 11, color: _kMuted),
-                                ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        _buildCameraPreview(),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: <Widget>[
+                              _buildActionArea(),
+                              const SizedBox(height: 12),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: const <Widget>[
+                                  Icon(Icons.lock_outline,
+                                      size: 14, color: _kMuted),
+                                  SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      'All processing is on-device. No image leaves your phone.',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                          fontSize: 11, color: _kMuted),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
               const SizedBox(height: 120),
