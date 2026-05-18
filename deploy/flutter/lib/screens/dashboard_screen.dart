@@ -1,9 +1,17 @@
+// ── FILE: lib/screens/dashboard_screen.dart ──
 import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
 import '../services/db_service.dart';
+
+// ── Design tokens ─────────────────────────────────────────────────────────
+const Color _kSurface = Color(0xFFFFFFFF);
+const Color _kNavy    = Color(0xFF0B1629);
+const Color _kSlate   = Color(0xFF475569);
+const Color _kMuted   = Color(0xFF94A3B8);
+const Color _kBlue1   = Color(0xFF1D4ED8);
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -42,18 +50,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final List<Map<String, dynamic>> recentAlerts =
           alerts.length > 10 ? alerts.sublist(0, 10) : alerts;
 
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       setState(() {
         _stats = stats;
         _alerts = recentAlerts;
         _error = null;
       });
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       setState(() {
         _error = error.toString();
       });
@@ -69,7 +73,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading && _stats == null) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(child: CircularProgressIndicator(color: _kBlue1));
     }
     if (_error != null && _stats == null) {
       return Center(
@@ -78,7 +82,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Text(
             _error!,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: Color(0xFF93000A)),
+            style: const TextStyle(color: Color(0xFF991B1B)),
           ),
         ),
       );
@@ -91,68 +95,80 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     return RefreshIndicator(
       onRefresh: _refreshData,
+      color: _kBlue1,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 20, 16, 120),
         children: <Widget>[
+          // ── Page header ──────────────────────────────────────────────────
           const Text(
-            'System Analytics',
+            'Analytics',
             style: TextStyle(
-              fontSize: 32,
+              fontSize: 28,
               fontWeight: FontWeight.w700,
-              color: Color(0xFF191C1E),
+              color: _kNavy,
             ),
           ),
           const SizedBox(height: 4),
           const Text(
             'Real-time pharmaceutical verification data.',
-            style: TextStyle(color: Color(0xFF575F6B)),
+            style: TextStyle(color: _kSlate, fontSize: 14),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
+
+          // ── Stats grid ───────────────────────────────────────────────────
           GridView.count(
             crossAxisCount: 2,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            childAspectRatio: 1.35,
-            crossAxisSpacing: 8,
-            mainAxisSpacing: 8,
+            childAspectRatio: 1.3,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
             children: <Widget>[
-              _statCard(
-                title: 'Total',
+              _StatCard(
+                label: 'Total Scans',
                 value: '${_intStat('total_scans')}',
                 icon: Icons.inventory_2_outlined,
-                accent: const Color(0xFF0053A6),
-                subtitle: 'Total scans',
+                borderColor: _kBlue1,
+                iconColor: _kBlue1,
               ),
-              _statCard(
-                title: 'Critical',
+              _StatCard(
+                label: 'Critical',
                 value: '$criticalCount',
                 icon: Icons.warning_amber_rounded,
-                accent: const Color(0xFFB71C1C),
-                subtitle: 'Immediate action',
+                borderColor: const Color(0xFFF87171),
+                iconColor: const Color(0xFF991B1B),
               ),
-              _statCard(
-                title: 'High Risk',
+              _StatCard(
+                label: 'High Risk',
                 value: '$highCount',
                 icon: Icons.priority_high_rounded,
-                accent: const Color(0xFFE65100),
-                subtitle: 'Awaiting verification',
+                borderColor: const Color(0xFFFB923C),
+                iconColor: const Color(0xFF9A3412),
               ),
-              _statCard(
-                title: 'Today',
+              _StatCard(
+                label: 'Today',
                 value: '${_intStat('last_24h_count')}',
                 icon: Icons.today_outlined,
-                accent: const Color(0xFF0053A6),
-                subtitle: 'Last 24 hours',
+                borderColor: const Color(0xFF818CF8),
+                iconColor: const Color(0xFF4338CA),
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
+
+          // ── Risk distribution card ───────────────────────────────────────
           Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFC2C6D4)),
+            padding: const EdgeInsets.all(20),
+            decoration: const BoxDecoration(
+              color: _kSurface,
+              borderRadius: BorderRadius.all(Radius.circular(16)),
+              boxShadow: <BoxShadow>[
+                BoxShadow(
+                  color: Color(0x0A000000),
+                  blurRadius: 24,
+                  offset: Offset(0, 4),
+                ),
+              ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -160,141 +176,140 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const Text(
                   'Risk Distribution',
                   style: TextStyle(
-                    fontSize: 20,
+                    fontSize: 18,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF191C1E),
+                    color: _kNavy,
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
                 SizedBox(
-                  height: 220,
+                  height: 200,
                   child: Center(
                     child: _DonutChart(
-                      values: <int>[criticalCount, highCount, moderateCount, lowCount],
+                      values: <int>[
+                        criticalCount,
+                        highCount,
+                        moderateCount,
+                        lowCount
+                      ],
                       colors: const <Color>[
-                        Color(0xFFB71C1C),
-                        Color(0xFFE65100),
-                        Color(0xFFF57F17),
-                        Color(0xFF2E7D32),
+                        Color(0xFF991B1B),
+                        Color(0xFF9A3412),
+                        Color(0xFF92400E),
+                        Color(0xFF065F46),
                       ],
                     ),
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 12),
                 const Wrap(
-                  spacing: 12,
+                  spacing: 16,
                   runSpacing: 8,
                   children: <Widget>[
-                    _LegendItem(label: 'Critical', color: Color(0xFFB71C1C)),
-                    _LegendItem(label: 'High', color: Color(0xFFE65100)),
-                    _LegendItem(label: 'Moderate', color: Color(0xFFF57F17)),
-                    _LegendItem(label: 'Low', color: Color(0xFF2E7D32)),
+                    _LegendItem(label: 'Critical', color: Color(0xFF991B1B)),
+                    _LegendItem(label: 'High', color: Color(0xFF9A3412)),
+                    _LegendItem(label: 'Moderate', color: Color(0xFF92400E)),
+                    _LegendItem(label: 'Low', color: Color(0xFF065F46)),
                   ],
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
+
+          // ── Alerts card ──────────────────────────────────────────────────
           Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFC2C6D4)),
+            decoration: const BoxDecoration(
+              color: _kSurface,
+              borderRadius: BorderRadius.all(Radius.circular(16)),
+              boxShadow: <BoxShadow>[
+                BoxShadow(
+                  color: Color(0x0A000000),
+                  blurRadius: 24,
+                  offset: Offset(0, 4),
+                ),
+              ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 const Padding(
-                  padding: EdgeInsets.all(16),
+                  padding: EdgeInsets.fromLTRB(20, 20, 20, 12),
                   child: Row(
                     children: <Widget>[
-                      Icon(Icons.warning_amber_rounded, color: Color(0xFFB71C1C)),
+                      Icon(Icons.warning_amber_rounded,
+                          color: Color(0xFF991B1B), size: 20),
                       SizedBox(width: 8),
                       Text(
                         'Recent Alerts',
                         style: TextStyle(
-                          fontSize: 20,
+                          fontSize: 18,
                           fontWeight: FontWeight.w600,
-                          color: Color(0xFF191C1E),
+                          color: _kNavy,
                         ),
                       ),
                     ],
                   ),
                 ),
-                const Divider(height: 1),
+                const Divider(height: 1, color: Color(0xFFE2E8F0)),
                 if (_alerts.isEmpty)
                   const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text('No critical alerts found.'),
+                    padding: EdgeInsets.all(20),
+                    child: Text(
+                      'No critical alerts found.',
+                      style: TextStyle(color: _kMuted),
+                    ),
                   ),
                 ..._alerts.map((Map<String, dynamic> alert) {
-                  return ListTile(
-                    leading: Container(
-                      width: 4,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFB71C1C),
-                        borderRadius: BorderRadius.circular(4),
+                  return Container(
+                    margin: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF2F2),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border(
+                        left: const BorderSide(
+                            color: Color(0xFFF87171), width: 3),
                       ),
                     ),
-                    title: Text('Batch #${alert['batch_code'] ?? 'N/A'}'),
-                    subtitle: Text(
-                      '${alert['medicine_name'] ?? 'Unknown'} • ${alert['timestamp'] ?? ''}',
+                    child: Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(
+                                (alert['medicine_name'] as String?) ??
+                                    'Unknown',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: _kNavy,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Batch #${alert['batch_code'] ?? 'N/A'}',
+                                style: const TextStyle(
+                                    color: _kSlate, fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Text(
+                          (alert['timestamp'] as String? ?? '')
+                              .split('T')
+                              .first,
+                          style: const TextStyle(
+                              color: _kMuted, fontSize: 11),
+                        ),
+                      ],
                     ),
-                    trailing: const Icon(Icons.visibility_outlined, color: Color(0xFF0053A6)),
                   );
                 }),
+                const SizedBox(height: 16),
               ],
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _statCard({
-    required String title,
-    required String value,
-    required IconData icon,
-    required Color accent,
-    required String subtitle,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFC2C6D4)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: <Widget>[
-              Icon(icon, color: accent),
-              Text(
-                title.toUpperCase(),
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: Color(0xFF575F6B),
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          const Spacer(),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 30,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF191C1E),
-            ),
-          ),
-          Text(
-            subtitle,
-            style: const TextStyle(fontSize: 11, color: Color(0xFF727784)),
           ),
         ],
       ),
@@ -307,6 +322,71 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.dispose();
   }
 }
+
+// ── Stat card ─────────────────────────────────────────────────────────────
+
+class _StatCard extends StatelessWidget {
+  const _StatCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.borderColor,
+    required this.iconColor,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color borderColor;
+  final Color iconColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _kSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border(left: BorderSide(color: borderColor, width: 4)),
+        boxShadow: const <BoxShadow>[
+          BoxShadow(
+            color: Color(0x0A000000),
+            blurRadius: 24,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: <Widget>[
+              const Spacer(),
+              Icon(icon, color: iconColor, size: 22),
+            ],
+          ),
+          const Spacer(),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 32,
+              fontWeight: FontWeight.w700,
+              color: _kNavy,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 12, color: _kMuted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Legend item ───────────────────────────────────────────────────────────
 
 class _LegendItem extends StatelessWidget {
   const _LegendItem({required this.label, required this.color});
@@ -328,11 +408,13 @@ class _LegendItem extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 6),
-        Text(label),
+        Text(label, style: const TextStyle(color: _kSlate, fontSize: 13)),
       ],
     );
   }
 }
+
+// ── Donut chart (preserved exactly) ──────────────────────────────────────
 
 class _DonutChart extends StatelessWidget {
   const _DonutChart({required this.values, required this.colors});
@@ -342,7 +424,8 @@ class _DonutChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final int total = values.fold<int>(0, (int sum, int value) => sum + value);
+    final int total =
+        values.fold<int>(0, (int sum, int value) => sum + value);
     return SizedBox(
       width: 180,
       height: 180,
@@ -357,6 +440,7 @@ class _DonutChart extends StatelessWidget {
                 style: const TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w700,
+                  color: _kNavy,
                 ),
               ),
               const Text(
@@ -364,7 +448,7 @@ class _DonutChart extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFF575F6B),
+                  color: _kMuted,
                 ),
               ),
             ],
@@ -383,7 +467,8 @@ class _DonutPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final int total = values.fold<int>(0, (int sum, int value) => sum + value);
+    final int total =
+        values.fold<int>(0, (int sum, int value) => sum + value);
     final Offset center = Offset(size.width / 2, size.height / 2);
     final double radius = math.min(size.width, size.height) / 2 - 8;
     const double strokeWidth = 22;
@@ -391,19 +476,15 @@ class _DonutPainter extends CustomPainter {
     final Paint bgPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth
-      ..color = const Color(0xFFECEEF0);
+      ..color = const Color(0xFFE2E8F0);
     canvas.drawCircle(center, radius, bgPaint);
 
-    if (total == 0) {
-      return;
-    }
+    if (total == 0) return;
 
     double start = -math.pi / 2;
     for (int i = 0; i < values.length; i++) {
       final int value = values[i];
-      if (value <= 0) {
-        continue;
-      }
+      if (value <= 0) continue;
       final double sweep = (value / total) * (2 * math.pi);
       final Paint paint = Paint()
         ..style = PaintingStyle.stroke

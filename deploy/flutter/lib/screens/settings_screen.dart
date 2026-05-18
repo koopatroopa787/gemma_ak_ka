@@ -1,8 +1,18 @@
+// ── FILE: lib/screens/settings_screen.dart ──
 import 'package:flutter/material.dart';
 
 import '../services/model_manager.dart';
 import '../services/model_settings.dart';
 import '../services/pharos_vision_service.dart';
+
+// ── Design tokens ─────────────────────────────────────────────────────────
+const Color _kSurface = Color(0xFFFFFFFF);
+const Color _kNavy    = Color(0xFF0B1629);
+const Color _kSlate   = Color(0xFF475569);
+const Color _kMuted   = Color(0xFF94A3B8);
+const Color _kBorder  = Color(0xFFE2E8F0);
+const Color _kBlue1   = Color(0xFF1D4ED8);
+const Color _kBlue3   = Color(0xFFEFF6FF);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SettingsScreen
@@ -63,7 +73,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            backgroundColor: const Color(0xFF1B5E20),
+            backgroundColor: const Color(0xFF065F46),
             content: Text(
               _lastChanges.isNotEmpty
                   ? 'Configs updated: ${_lastChanges.join(', ')}'
@@ -84,231 +94,229 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 120),
+    return Stack(
       children: <Widget>[
-        // ── Page header ─────────────────────────────────────────────────────
-        const Text(
-          'Model Settings',
-          style: TextStyle(
-            fontSize: 28,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF191C1E),
-          ),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'Configure inference parameters — changes apply without reloading.',
-          style: TextStyle(color: Color(0xFF575F6B)),
-        ),
-
-        // ── "Configs updated" banner (shown after apply) ─────────────────
-        if (_lastChanges.isNotEmpty && !_hasChanges) ...<Widget>[
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1B5E20),
-              borderRadius: BorderRadius.circular(8),
+        ListView(
+          padding: EdgeInsets.fromLTRB(
+              16, 20, 16, _hasChanges ? 100 : 40),
+          children: <Widget>[
+            // ── Page header ───────────────────────────────────────────────
+            const Text(
+              'Settings',
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+                color: _kNavy,
+              ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                const Text(
-                  'Configs updated',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                  ),
+            const SizedBox(height: 4),
+            const Text(
+              'Configure inference parameters — changes apply without reloading.',
+              style: TextStyle(color: _kSlate, fontSize: 14),
+            ),
+
+            // ── "Configs updated" banner ──────────────────────────────────
+            if (_lastChanges.isNotEmpty && !_hasChanges) ...<Widget>[
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFECFDF5),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFF6EE7B7)),
                 ),
-                const SizedBox(height: 6),
-                ..._lastChanges.map(
-                  (String change) => Text(
-                    '• $change',
-                    style: const TextStyle(color: Colors.white70, fontSize: 13),
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    const Text(
+                      'Configs updated',
+                      style: TextStyle(
+                        color: Color(0xFF065F46),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    ..._lastChanges.map(
+                      (String change) => Text(
+                        '• $change',
+                        style: const TextStyle(
+                            color: Color(0xFF065F46), fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 20),
+
+            // ── Inference parameters ──────────────────────────────────────
+            _SectionCard(
+              title: 'Inference Parameters',
+              children: <Widget>[
+                _sliderRow(
+                  label: 'Max tokens',
+                  value: _draft.maxTokens.toDouble(),
+                  min: 256,
+                  max: 17710,
+                  divisions: 170,
+                  display: '${_draft.maxTokens}',
+                  onChanged: (double v) =>
+                      _markChanged(_draft.copyWith(maxTokens: v.round())),
+                ),
+                _sliderRow(
+                  label: 'TopK',
+                  value: _draft.topK.toDouble(),
+                  min: 1,
+                  max: 100,
+                  divisions: 99,
+                  display: '${_draft.topK}',
+                  onChanged: (double v) =>
+                      _markChanged(_draft.copyWith(topK: v.round())),
+                ),
+                _sliderRow(
+                  label: 'TopP',
+                  value: _draft.topP,
+                  min: 0.0,
+                  max: 1.0,
+                  divisions: 100,
+                  display: _draft.topP.toStringAsFixed(2),
+                  onChanged: (double v) =>
+                      _markChanged(_draft.copyWith(topP: v)),
+                ),
+                _sliderRow(
+                  label: 'Temperature',
+                  value: _draft.temperature,
+                  min: 0.0,
+                  max: 2.0,
+                  divisions: 200,
+                  display: _draft.temperature.toStringAsFixed(2),
+                  onChanged: (double v) =>
+                      _markChanged(_draft.copyWith(temperature: v)),
                 ),
               ],
             ),
-          ),
-        ],
 
-        const SizedBox(height: 20),
+            const SizedBox(height: 12),
 
-        // ── Inference parameters ────────────────────────────────────────────
-        _card(
-          title: 'Inference Parameters',
-          children: <Widget>[
-            _sliderRow(
-              label: 'Max tokens',
-              value: _draft.maxTokens.toDouble(),
-              min: 256,
-              max: 17710,
-              divisions: 170,
-              display: '${_draft.maxTokens}',
-              onChanged: (double v) =>
-                  _markChanged(_draft.copyWith(maxTokens: v.round())),
-            ),
-            _sliderRow(
-              label: 'TopK',
-              value: _draft.topK.toDouble(),
-              min: 1,
-              max: 100,
-              divisions: 99,
-              display: '${_draft.topK}',
-              onChanged: (double v) =>
-                  _markChanged(_draft.copyWith(topK: v.round())),
-            ),
-            _sliderRow(
-              label: 'TopP',
-              value: _draft.topP,
-              min: 0.0,
-              max: 1.0,
-              divisions: 100,
-              display: _draft.topP.toStringAsFixed(2),
-              onChanged: (double v) =>
-                  _markChanged(_draft.copyWith(topP: v)),
-            ),
-            _sliderRow(
-              label: 'Temperature',
-              value: _draft.temperature,
-              min: 0.0,
-              max: 2.0,
-              divisions: 200,
-              display: _draft.temperature.toStringAsFixed(2),
-              onChanged: (double v) =>
-                  _markChanged(_draft.copyWith(temperature: v)),
-            ),
-          ],
-        ),
-
-        const SizedBox(height: 12),
-
-        // ── Runtime options ─────────────────────────────────────────────────
-        _card(
-          title: 'Runtime',
-          children: <Widget>[
-            // Accelerator toggle (GPU / CPU)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Row(
-                children: <Widget>[
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          'Accelerator',
-                          style: TextStyle(fontWeight: FontWeight.w600),
+            // ── Runtime options ───────────────────────────────────────────
+            _SectionCard(
+              title: 'Runtime',
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    children: <Widget>[
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(
+                              'Accelerator',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: _kNavy),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'GPU is faster; CPU works on all devices.',
+                              style:
+                                  TextStyle(fontSize: 12, color: _kMuted),
+                            ),
+                          ],
                         ),
-                        Text(
-                          'GPU is faster; CPU works on all devices.',
-                          style: TextStyle(fontSize: 12, color: Color(0xFF727784)),
+                      ),
+                      SegmentedButton<bool>(
+                        segments: const <ButtonSegment<bool>>[
+                          ButtonSegment<bool>(
+                              value: true, label: Text('GPU')),
+                          ButtonSegment<bool>(
+                              value: false, label: Text('CPU')),
+                        ],
+                        selected: <bool>{_draft.useGpu},
+                        onSelectionChanged: (Set<bool> s) =>
+                            _markChanged(_draft.copyWith(useGpu: s.first)),
+                        style: ButtonStyle(
+                          tapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
                         ),
-                      ],
-                    ),
-                  ),
-                  SegmentedButton<bool>(
-                    segments: const <ButtonSegment<bool>>[
-                      ButtonSegment<bool>(value: true,  label: Text('GPU')),
-                      ButtonSegment<bool>(value: false, label: Text('CPU')),
+                      ),
                     ],
-                    selected: <bool>{_draft.useGpu},
-                    onSelectionChanged: (Set<bool> s) =>
-                        _markChanged(_draft.copyWith(useGpu: s.first)),
-                    style: ButtonStyle(
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
                   ),
-                ],
-              ),
+                ),
+                const Divider(height: 1, color: _kBorder),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text(
+                    'Enable thinking',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w600, color: _kNavy),
+                  ),
+                  subtitle: const Text(
+                    'Extended reasoning mode — adds latency, increases accuracy.',
+                    style: TextStyle(fontSize: 12, color: _kMuted),
+                  ),
+                  value: _draft.enableThinking,
+                  onChanged: (bool v) =>
+                      _markChanged(_draft.copyWith(enableThinking: v)),
+                  activeThumbColor: _kBlue1,
+                  activeTrackColor: _kBlue1.withValues(alpha: 0.4),
+                ),
+              ],
             ),
 
-            const Divider(height: 1),
+            const SizedBox(height: 12),
 
-            // Enable thinking
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text(
-                'Enable thinking',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              subtitle: const Text(
-                'Extended reasoning mode — adds latency, increases accuracy.',
-                style: TextStyle(fontSize: 12),
-              ),
-              value: _draft.enableThinking,
-              onChanged: (bool v) =>
-                  _markChanged(_draft.copyWith(enableThinking: v)),
-              activeThumbColor: const Color(0xFF1A6BCC),
-            ),
+            // ── Model file info ───────────────────────────────────────────
+            _ModelInfoCard(visionService: widget.visionService),
+
+            // Extra bottom space so content isn't hidden by floating button
+            const SizedBox(height: 12),
           ],
         ),
 
-        const SizedBox(height: 12),
-
-        // ── Model file info ─────────────────────────────────────────────────
-        _ModelInfoCard(visionService: widget.visionService),
-
-        const SizedBox(height: 20),
-
-        // ── Apply button ─────────────────────────────────────────────────────
-        ElevatedButton(
-          onPressed: _hasChanges && !_isSaving ? _applyChanges : null,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF1A6BCC),
-            foregroundColor: Colors.white,
-            minimumSize: const Size.fromHeight(48),
-          ),
-          child: _isSaving
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                      color: Colors.white, strokeWidth: 2),
-                )
-              : const Text('Apply Changes'),
-        ),
-
+        // ── Floating Apply button (appears only when _hasChanges) ──────────
         if (_hasChanges)
-          TextButton(
-            onPressed: () => setState(() {
-              _draft = widget.settingsService.settings;
-              _hasChanges = false;
-            }),
-            child: const Text('Discard'),
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              child: Padding(
+                padding:
+                    const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    _GradientButton(
+                      isSaving: _isSaving,
+                      onPressed:
+                          _hasChanges && !_isSaving ? _applyChanges : null,
+                    ),
+                    const SizedBox(height: 6),
+                    Center(
+                      child: TextButton(
+                        onPressed: () => setState(() {
+                          _draft = widget.settingsService.settings;
+                          _hasChanges = false;
+                        }),
+                        child: const Text(
+                          'Discard',
+                          style: TextStyle(color: _kMuted),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
       ],
     );
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
-
-  Widget _card({required String title, required List<Widget> children}) =>
-      Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFC2C6D4)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(
-              title.toUpperCase(),
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.1,
-                color: Color(0xFF575F6B),
-              ),
-            ),
-            const SizedBox(height: 12),
-            ...children,
-          ],
-        ),
-      );
 
   Widget _sliderRow({
     required String label,
@@ -318,45 +326,176 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required int divisions,
     required String display,
     required ValueChanged<double> onChanged,
-  }) =>
-      Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Column(
-          children: <Widget>[
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: <Widget>[
-                Text(label,
-                    style: const TextStyle(fontWeight: FontWeight.w500)),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEAEFFF),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    display,
-                    style: const TextStyle(
-                      color: Color(0xFF0053A6),
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
-                    ),
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Column(
+        children: <Widget>[
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: <Widget>[
+              Text(
+                label,
+                style: const TextStyle(
+                    fontWeight: FontWeight.w500, color: _kNavy),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                decoration: BoxDecoration(
+                  color: _kBlue3,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  display,
+                  style: const TextStyle(
+                    color: _kBlue1,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
                   ),
                 ),
-              ],
+              ),
+            ],
+          ),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: _kBlue1,
+              inactiveTrackColor: _kBorder,
+              thumbColor: _kBlue1,
+              overlayColor: _kBlue1.withValues(alpha: 0.12),
             ),
-            Slider(
+            child: Slider(
               value: value.clamp(min, max),
               min: min,
               max: max,
               divisions: divisions,
               onChanged: onChanged,
-              activeColor: const Color(0xFF1A6BCC),
             ),
-          ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Section card ──────────────────────────────────────────────────────────
+
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({required this.title, required this.children});
+
+  final String title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: const BoxDecoration(
+        color: _kSurface,
+        borderRadius: BorderRadius.all(Radius.circular(16)),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: Color(0x0A000000),
+            blurRadius: 24,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          // Section label with blue left accent bar
+          Row(
+            children: <Widget>[
+              Container(
+                width: 3,
+                height: 14,
+                decoration: const BoxDecoration(
+                  color: _kBlue1,
+                  borderRadius: BorderRadius.all(Radius.circular(2)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                title.toUpperCase(),
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.1,
+                  color: _kMuted,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          ...children,
+        ],
+      ),
+    );
+  }
+}
+
+// ── Gradient apply button ─────────────────────────────────────────────────
+
+class _GradientButton extends StatelessWidget {
+  const _GradientButton({
+    required this.isSaving,
+    required this.onPressed,
+  });
+
+  final bool isSaving;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 52,
+      decoration: BoxDecoration(
+        gradient: onPressed != null
+            ? const LinearGradient(
+                colors: <Color>[_kBlue1, Color(0xFF2563EB)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              )
+            : null,
+        color: onPressed == null ? const Color(0xFFE2E8F0) : null,
+        borderRadius: BorderRadius.circular(999),
+        boxShadow: onPressed != null
+            ? const <BoxShadow>[
+                BoxShadow(
+                  color: Color(0x331D4ED8),
+                  blurRadius: 16,
+                  offset: Offset(0, 4),
+                ),
+              ]
+            : null,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(999),
+          child: Center(
+            child: isSaving
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                        color: Colors.white, strokeWidth: 2),
+                  )
+                : const Text(
+                    'Apply Changes',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
+          ),
         ),
-      );
+      ),
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -408,28 +547,44 @@ class _ModelInfoCardState extends State<_ModelInfoCard> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFC2C6D4)),
+        color: _kBlue3,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          const Text(
-            'MODEL',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.1,
-              color: Color(0xFF575F6B),
-            ),
+          // Section label with accent bar
+          Row(
+            children: <Widget>[
+              Container(
+                width: 3,
+                height: 14,
+                decoration: const BoxDecoration(
+                  color: _kBlue1,
+                  borderRadius: BorderRadius.all(Radius.circular(2)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'MODEL',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.1,
+                  color: _kMuted,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           Row(
             children: <Widget>[
               Icon(
                 ready ? Icons.check_circle : Icons.downloading,
-                color: ready ? const Color(0xFF2E7D32) : const Color(0xFF1A6BCC),
+                color: ready
+                    ? const Color(0xFF065F46)
+                    : _kBlue1,
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -438,7 +593,8 @@ class _ModelInfoCardState extends State<_ModelInfoCard> {
                   children: <Widget>[
                     const Text(
                       'Gemma-4-E2B-it',
-                      style: TextStyle(fontWeight: FontWeight.w600),
+                      style: TextStyle(
+                          fontWeight: FontWeight.w600, color: _kNavy),
                     ),
                     Text(
                       ready
@@ -446,8 +602,8 @@ class _ModelInfoCardState extends State<_ModelInfoCard> {
                           : _sizeBytes > 0
                               ? '${_fmt(_sizeBytes)} downloaded (incomplete)'
                               : 'Not downloaded',
-                      style: const TextStyle(
-                          fontSize: 12, color: Color(0xFF727784)),
+                      style:
+                          const TextStyle(fontSize: 12, color: _kSlate),
                     ),
                   ],
                 ),
@@ -459,27 +615,30 @@ class _ModelInfoCardState extends State<_ModelInfoCard> {
             AnimatedBuilder(
               animation: widget.visionService.isInitialized,
               builder: (_, __) {
-                final bool initialized = widget.visionService.isInitialized.value;
+                final bool initialized =
+                    widget.visionService.isInitialized.value;
                 return Row(
                   children: <Widget>[
                     Icon(
                       initialized ? Icons.bolt : Icons.hourglass_empty,
                       size: 16,
                       color: initialized
-                          ? const Color(0xFF2E7D32)
-                          : const Color(0xFFF57F17),
+                          ? const Color(0xFF065F46)
+                          : const Color(0xFF92400E),
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      initialized ? 'Engine running' : 'Engine not loaded',
-                      style: const TextStyle(
-                          fontSize: 12, color: Color(0xFF575F6B)),
+                      initialized
+                          ? 'Engine running'
+                          : 'Engine not loaded',
+                      style:
+                          const TextStyle(fontSize: 12, color: _kSlate),
                     ),
                   ],
                 );
               },
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: () async {
                 final bool confirm = await showDialog<bool>(
@@ -490,13 +649,15 @@ class _ModelInfoCardState extends State<_ModelInfoCard> {
                             'This will free ~2.6 GB but requires a re-download to use Pharos offline.'),
                         actions: <Widget>[
                           TextButton(
-                              onPressed: () => Navigator.pop(context, false),
+                              onPressed: () =>
+                                  Navigator.pop(context, false),
                               child: const Text('Cancel')),
                           TextButton(
-                              onPressed: () => Navigator.pop(context, true),
+                              onPressed: () =>
+                                  Navigator.pop(context, true),
                               child: const Text('Delete',
-                                  style:
-                                      TextStyle(color: Color(0xFFB71C1C)))),
+                                  style: TextStyle(
+                                      color: Color(0xFF991B1B)))),
                         ],
                       ),
                     ) ??
@@ -508,9 +669,14 @@ class _ModelInfoCardState extends State<_ModelInfoCard> {
                 }
               },
               icon: const Icon(Icons.delete_outline,
-                  color: Color(0xFFB71C1C), size: 18),
+                  color: Color(0xFF991B1B), size: 18),
               label: const Text('Delete model file',
-                  style: TextStyle(color: Color(0xFFB71C1C))),
+                  style: TextStyle(color: Color(0xFF991B1B))),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Color(0xFFF87171)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
             ),
           ],
         ],

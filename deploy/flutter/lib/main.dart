@@ -1,3 +1,4 @@
+// ── FILE: lib/main.dart ──
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -10,6 +11,17 @@ import 'services/model_settings.dart';
 import 'services/pharos_vision_service.dart';
 import 'services/signing_service.dart';
 import 'services/sync_service.dart';
+
+// ── Design-system constants ────────────────────────────────────────────────
+const Color kBg      = Color(0xFFF0F4FA);
+const Color kSurface = Color(0xFFFFFFFF);
+const Color kNavy    = Color(0xFF0B1629);
+const Color kSlate   = Color(0xFF475569);
+const Color kMuted   = Color(0xFF94A3B8);
+const Color kBorder  = Color(0xFFE2E8F0);
+const Color kBlue1   = Color(0xFF1D4ED8);
+const Color kBlue2   = Color(0xFF3B82F6);
+const Color kBlue3   = Color(0xFFEFF6FF);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -65,17 +77,21 @@ class _PharosAppState extends State<PharosApp> {
       theme: ThemeData(
         useMaterial3: true,
         fontFamily: 'Inter',
-        scaffoldBackgroundColor: const Color(0xFFF8F9FB),
+        scaffoldBackgroundColor: kBg,
         colorScheme: const ColorScheme.light(
-          primary: Color(0xFF0053A6),
-          secondary: Color(0xFF575F6B),
-          surface: Colors.white,
+          primary: kBlue1,
+          secondary: kSlate,
+          surface: kSurface,
           error: Color(0xFFBA1A1A),
         ),
         appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.white,
-          foregroundColor: Color(0xFF191C1E),
+          backgroundColor: kSurface,
+          foregroundColor: kNavy,
           elevation: 0,
+        ),
+        textTheme: const TextTheme(
+          bodyMedium: TextStyle(color: kSlate),
+          bodyLarge: TextStyle(color: kNavy),
         ),
       ),
       darkTheme: ThemeData(
@@ -113,6 +129,13 @@ class _PharosHomeState extends State<PharosHome> {
   final SyncService _syncService = SyncService();
   int _currentIndex = 0;
 
+  static const List<_NavItem> _navItems = <_NavItem>[
+    _NavItem(icon: Icons.document_scanner_outlined, label: 'Scanner'),
+    _NavItem(icon: Icons.history_outlined, label: 'History'),
+    _NavItem(icon: Icons.bar_chart_outlined, label: 'Analytics'),
+    _NavItem(icon: Icons.tune_outlined, label: 'Settings'),
+  ];
+
   @override
   Widget build(BuildContext context) {
     final List<Widget> pages = <Widget>[
@@ -129,52 +152,13 @@ class _PharosHomeState extends State<PharosHome> {
     ];
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Row(
-          children: <Widget>[
-            Icon(Icons.shield_outlined, color: Color(0xFF1A6BCC)),
-            SizedBox(width: 8),
-            Text(
-              'Pharos',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF1A6BCC),
-              ),
-            ),
-          ],
-        ),
-        actions: <Widget>[
-          IconButton(
-            onPressed: widget.onToggleTheme,
-            icon: const Icon(Icons.dark_mode_outlined, color: Color(0xFF1A6BCC)),
-            tooltip: 'Toggle theme',
-          ),
-        ],
-      ),
+      backgroundColor: kBg,
+      // No global AppBar — title lives inside ScannerScreen's hero section.
       body: IndexedStack(index: _currentIndex, children: pages),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (int index) =>
-            setState(() => _currentIndex = index),
-        destinations: const <NavigationDestination>[
-          NavigationDestination(
-            icon: Icon(Icons.document_scanner_outlined),
-            label: 'Scanner',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.history),
-            label: 'History',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            label: 'Dashboard',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.tune_outlined),
-            label: 'Settings',
-          ),
-        ],
+      bottomNavigationBar: _FloatingNavBar(
+        currentIndex: _currentIndex,
+        items: _navItems,
+        onTap: (int index) => setState(() => _currentIndex = index),
       ),
     );
   }
@@ -184,5 +168,97 @@ class _PharosHomeState extends State<PharosHome> {
     _syncService.dispose();
     unawaited(widget.visionService.dispose());
     super.dispose();
+  }
+}
+
+// ── Floating bottom nav ────────────────────────────────────────────────────
+
+class _NavItem {
+  const _NavItem({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+}
+
+class _FloatingNavBar extends StatelessWidget {
+  const _FloatingNavBar({
+    required this.currentIndex,
+    required this.items,
+    required this.onTap,
+  });
+
+  final int currentIndex;
+  final List<_NavItem> items;
+  final ValueChanged<int> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        child: Container(
+          height: 80,
+          decoration: BoxDecoration(
+            color: kSurface,
+            borderRadius: BorderRadius.circular(40),
+            boxShadow: const <BoxShadow>[
+              BoxShadow(
+                color: Color(0x1A000000),
+                blurRadius: 24,
+                offset: Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: List<Widget>.generate(items.length, (int i) {
+              final bool selected = i == currentIndex;
+              final _NavItem item = items[i];
+              return GestureDetector(
+                onTap: () => onTap(i),
+                behavior: HitTestBehavior.opaque,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeInOut,
+                  padding: selected
+                      ? const EdgeInsets.symmetric(horizontal: 18, vertical: 10)
+                      : const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    gradient: selected
+                        ? const LinearGradient(
+                            colors: <Color>[kBlue1, Color(0xFF2563EB)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          )
+                        : null,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Icon(
+                        item.icon,
+                        size: 22,
+                        color: selected ? kSurface : kMuted,
+                      ),
+                      if (selected) ...<Widget>[
+                        const SizedBox(width: 6),
+                        Text(
+                          item.label,
+                          style: const TextStyle(
+                            color: kSurface,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ),
+        ),
+      ),
+    );
   }
 }

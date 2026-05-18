@@ -1,3 +1,4 @@
+// ── FILE: lib/screens/capture_screen.dart ──
 import 'dart:io';
 
 import 'package:camera/camera.dart';
@@ -270,7 +271,7 @@ class _CaptureScreenState extends State<CaptureScreen>
                       ),
                     ),
                     const SizedBox(height: 24),
-                    // Shutter button
+                    // Classic camera shutter — outer white ring + inner filled circle
                     GestureDetector(
                       onTap: (_controller != null && !_capturing && !_initializing)
                           ? _capture
@@ -281,9 +282,7 @@ class _CaptureScreenState extends State<CaptureScreen>
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.white, width: 4),
-                          color: _capturing
-                              ? Colors.white38
-                              : Colors.transparent,
+                          color: Colors.transparent,
                         ),
                         child: _capturing
                             ? const Center(
@@ -359,12 +358,12 @@ class _CaptureScreenState extends State<CaptureScreen>
             ),
           ),
 
-          // Bottom action bar
+          // Bottom action bar — gradient overlay + buttons
           Positioned(
             bottom: 0, left: 0, right: 0,
             child: SafeArea(
               child: Container(
-                padding: const EdgeInsets.fromLTRB(24, 16, 24, 36),
+                padding: const EdgeInsets.fromLTRB(24, 32, 24, 36),
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.bottomCenter,
@@ -375,7 +374,7 @@ class _CaptureScreenState extends State<CaptureScreen>
                 ),
                 child: Row(
                   children: <Widget>[
-                    // Retake
+                    // Retake — ghost style
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: _retake,
@@ -389,12 +388,12 @@ class _CaptureScreenState extends State<CaptureScreen>
                           side: const BorderSide(color: Colors.white60),
                           minimumSize: const Size.fromHeight(52),
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10)),
+                              borderRadius: BorderRadius.circular(14)),
                         ),
                       ),
                     ),
                     const SizedBox(width: 16),
-                    // Use Photo
+                    // Use Photo — blue filled
                     Expanded(
                       flex: 2,
                       child: ElevatedButton.icon(
@@ -402,13 +401,13 @@ class _CaptureScreenState extends State<CaptureScreen>
                         icon: const Icon(Icons.check_circle_outline, size: 18),
                         label: const Text('Use Photo'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1A6BCC),
+                          backgroundColor: const Color(0xFF1D4ED8),
                           foregroundColor: Colors.white,
                           minimumSize: const Size.fromHeight(52),
                           textStyle: const TextStyle(
                               fontWeight: FontWeight.w700, fontSize: 15),
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10)),
+                              borderRadius: BorderRadius.circular(14)),
                         ),
                       ),
                     ),
@@ -439,7 +438,7 @@ class _CircleButton extends StatelessWidget {
       child: Container(
         width: 44,
         height: 44,
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           shape: BoxShape.circle,
           color: Colors.black45,
         ),

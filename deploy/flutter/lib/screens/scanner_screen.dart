@@ -1,3 +1,4 @@
+// ── FILE: lib/screens/scanner_screen.dart ──
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -15,6 +16,13 @@ import '../services/pharos_vision_service.dart';
 import '../services/signing_service.dart';
 import 'capture_screen.dart';
 import 'result_screen.dart';
+
+// ── Design-system constants (local) ───────────────────────────────────────
+const Color _kSurface = Color(0xFFFFFFFF);
+const Color _kNavy    = Color(0xFF0B1629);
+const Color _kMuted   = Color(0xFF94A3B8);
+const Color _kBlue1   = Color(0xFF1D4ED8);
+const Color _kBlue2   = Color(0xFF3B82F6);
 
 class ScannerScreen extends StatefulWidget {
   const ScannerScreen({
@@ -577,131 +585,208 @@ class _ScannerScreenState extends State<ScannerScreen> {
   Widget build(BuildContext context) {
     return Stack(
       children: <Widget>[
-        SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                const Text(
-                  'Verify Medicine Authenticity',
-                  style: TextStyle(
-                    fontSize: 30,
-                    height: 1.2,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF191C1E),
-                  ),
+        SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              _buildHero(),
+              // Scanner card overlaps hero with negative top margin
+              Container(
+                margin: const EdgeInsets.fromLTRB(16, -24, 16, 0),
+                decoration: BoxDecoration(
+                  color: _kSurface,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: const <BoxShadow>[
+                    BoxShadow(
+                      color: Color(0x0A000000),
+                      blurRadius: 24,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 8),
-                const Text(
-                  'On-device Gemma 4 AI — fully offline, no data leaves your phone.',
-                  style: TextStyle(
-                    fontSize: 15,
-                    height: 1.4,
-                    color: Color(0xFF424752),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFC2C6D4)),
-                  ),
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      // Camera viewfinder preview — shows a live feed so the
-                      // user can see the camera is ready before tapping Analyze.
-                      // Tapping the preview itself also opens CaptureScreen.
-                      GestureDetector(
-                        onTap: (_modelReady && !_isProcessing)
-                            ? _analyzeMedicine
-                            : null,
-                        child: Container(
-                          height: 300,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                                color: const Color(0xFFC2C6D4), width: 2),
-                            color: const Color(0xFF1A1C1E),
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(6),
-                            child: _cameraController != null &&
-                                    _cameraController!.value.isInitialized
-                                ? Stack(
-                                    fit: StackFit.expand,
-                                    children: <Widget>[
-                                      CameraPreview(_cameraController!),
-                                      // Tap hint overlay
-                                      Align(
-                                        alignment: Alignment.bottomCenter,
-                                        child: Container(
-                                          width: double.infinity,
-                                          padding: const EdgeInsets.symmetric(
-                                              vertical: 8),
-                                          color: Colors.black38,
-                                          child: const Text(
-                                            'Tap to open full-screen camera',
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                              color: Colors.white70,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  )
-                                : const Center(
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: <Widget>[
-                                        CircularProgressIndicator(
-                                            color: Colors.white54),
-                                        SizedBox(height: 12),
-                                        Text(
-                                          'Initialising camera…',
-                                          style: TextStyle(
-                                              color: Colors.white54,
-                                              fontSize: 13),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      _buildActionArea(),
-                      const SizedBox(height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: const <Widget>[
-                          Icon(Icons.lock_outline,
-                              size: 16, color: Color(0xFF5D6571)),
-                          SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              'All processing is on-device. No image leaves your phone.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                  fontSize: 12, color: Color(0xFF5D6571)),
-                            ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    _buildCameraPreview(),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          _buildActionArea(),
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: const <Widget>[
+                              Icon(Icons.lock_outline,
+                                  size: 14, color: _kMuted),
+                              SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  'All processing is on-device. No image leaves your phone.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                      fontSize: 11, color: _kMuted),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 120),
+            ],
           ),
         ),
         if (_isProcessing) _buildProcessingOverlay(),
       ],
+    );
+  }
+
+  // ── Hero section ──────────────────────────────────────────────────────────
+
+  Widget _buildHero() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: <Color>[_kBlue1, _kBlue2],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(32)),
+      ),
+      padding: const EdgeInsets.fromLTRB(24, 56, 24, 48),
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: const <Widget>[
+                Icon(Icons.shield_outlined, color: Colors.white, size: 28),
+                SizedBox(width: 10),
+                Text(
+                  'Pharos',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 26,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'Inter',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Medicine Verification',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.7),
+                fontSize: 14,
+                fontFamily: 'Inter',
+              ),
+            ),
+            const SizedBox(height: 4),
+            AnimatedBuilder(
+              animation: widget.visionService.status,
+              builder: (BuildContext context, _) {
+                if (!widget.visionService.isInitialized.value) {
+                  return const SizedBox.shrink();
+                }
+                return Row(
+                  children: <Widget>[
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF34D399),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      widget.visionService.status.value,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 12,
+                        fontFamily: 'Inter',
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Camera preview ─────────────────────────────────────────────────────────
+
+  Widget _buildCameraPreview() {
+    return GestureDetector(
+      onTap: (_modelReady && !_isProcessing) ? _analyzeMedicine : null,
+      child: Container(
+        height: 260,
+        margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+        decoration: BoxDecoration(
+          color: _kNavy,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: _cameraController != null &&
+                  _cameraController!.value.isInitialized
+              ? Stack(
+                  fit: StackFit.expand,
+                  children: <Widget>[
+                    CameraPreview(_cameraController!),
+                    Align(
+                      alignment: Alignment.bottomCenter,
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.bottomCenter,
+                            end: Alignment.topCenter,
+                            colors: <Color>[
+                              Color(0xCC000000),
+                              Colors.transparent,
+                            ],
+                          ),
+                        ),
+                        child: const Text(
+                          'Tap to open camera',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+              : const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      CircularProgressIndicator(color: Colors.white38),
+                      SizedBox(height: 12),
+                      Text(
+                        'Initialising camera…',
+                        style: TextStyle(color: Colors.white38, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+        ),
+      ),
     );
   }
 
@@ -713,7 +798,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
       return const Center(
         child: Padding(
           padding: EdgeInsets.symmetric(vertical: 12),
-          child: CircularProgressIndicator(),
+          child: CircularProgressIndicator(color: _kBlue1),
         ),
       );
     }
@@ -726,10 +811,9 @@ class _ScannerScreenState extends State<ScannerScreen> {
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: const Color(0xFFFFEBEE),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                  color: const Color(0xFFB71C1C).withValues(alpha: 0.3)),
+              color: const Color(0xFFFEF2F2),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFF87171)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -737,13 +821,13 @@ class _ScannerScreenState extends State<ScannerScreen> {
                 const Row(
                   children: <Widget>[
                     Icon(Icons.error_outline,
-                        color: Color(0xFFB71C1C), size: 20),
+                        color: Color(0xFF991B1B), size: 20),
                     SizedBox(width: 8),
                     Text(
                       'Wrong model format',
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFFB71C1C),
+                        color: Color(0xFF991B1B),
                         fontSize: 15,
                       ),
                     ),
@@ -752,33 +836,33 @@ class _ScannerScreenState extends State<ScannerScreen> {
                 const SizedBox(height: 8),
                 Text(
                   _modelFormatError!,
-                  style: const TextStyle(fontSize: 13, color: Color(0xFF424752)),
+                  style: const TextStyle(fontSize: 13, color: Color(0xFF475569)),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 12),
-          // Re-download — the URL is correct, just delete the bad file first.
-          ElevatedButton.icon(
+          _gradientButton(
+            label: 'Delete & re-download',
+            icon: Icons.refresh,
             onPressed: () async {
               await ModelManager.deleteModel();
               setState(() => _modelFormatError = null);
               await _startDownload();
             },
-            icon: const Icon(Icons.refresh),
-            label: const Text('Delete & re-download'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF1A6BCC),
-              foregroundColor: Colors.white,
-              minimumSize: const Size.fromHeight(48),
-            ),
           ),
           const SizedBox(height: 8),
-          // Escape hatch — advanced users who have the file elsewhere.
           OutlinedButton.icon(
             onPressed: _pickingFile ? null : _pickModelFile,
             icon: const Icon(Icons.folder_open, size: 18),
             label: const Text('Select file manually'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _kBlue1,
+              side: const BorderSide(color: Color(0xFFE2E8F0)),
+              minimumSize: const Size.fromHeight(48),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
           ),
         ],
       );
@@ -792,10 +876,9 @@ class _ScannerScreenState extends State<ScannerScreen> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFFFFF8E1),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                  color: const Color(0xFFF57F17).withValues(alpha: 0.3)),
+              color: const Color(0xFFFFFBEB),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFFCD34D)),
             ),
             child: const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -803,35 +886,36 @@ class _ScannerScreenState extends State<ScannerScreen> {
                 Text(
                   'Gemma 4 model not downloaded',
                   style: TextStyle(
-                      fontWeight: FontWeight.w700, color: Color(0xFFE65100)),
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF92400E)),
                 ),
                 SizedBox(height: 4),
                 Text(
                   'Download once (~2.6 GB on Wi-Fi). After that Pharos works '
                   'fully offline forever — no internet needed to scan.',
-                  style: TextStyle(fontSize: 13, color: Color(0xFF424752)),
+                  style: TextStyle(fontSize: 13, color: Color(0xFF475569)),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 12),
-          // Primary — auto download from HuggingFace
-          ElevatedButton.icon(
+          _gradientButton(
+            label: 'Download Gemma 4 E2B (~2.6 GB)',
+            icon: Icons.download,
             onPressed: _startDownload,
-            icon: const Icon(Icons.download),
-            label: const Text('Download Gemma 4 E2B (~2.6 GB)'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF1A6BCC),
-              foregroundColor: Colors.white,
-              minimumSize: const Size.fromHeight(48),
-            ),
           ),
           const SizedBox(height: 8),
-          // Secondary — for users who already have the file
           OutlinedButton.icon(
             onPressed: _pickingFile ? null : _pickModelFile,
             icon: const Icon(Icons.folder_open, size: 18),
             label: const Text('Select existing file from device'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _kBlue1,
+              side: const BorderSide(color: Color(0xFFE2E8F0)),
+              minimumSize: const Size.fromHeight(48),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
           ),
         ],
       );
@@ -848,7 +932,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
             'Downloading Gemma 4… $received / $total',
             textAlign: TextAlign.center,
             style: const TextStyle(
-                fontWeight: FontWeight.w600, color: Color(0xFF191C1E)),
+                fontWeight: FontWeight.w600, color: _kNavy),
           ),
           const SizedBox(height: 8),
           ClipRRect(
@@ -856,15 +940,15 @@ class _ScannerScreenState extends State<ScannerScreen> {
             child: LinearProgressIndicator(
               value: _downloadProgress > 0 ? _downloadProgress : null,
               minHeight: 8,
-              backgroundColor: const Color(0xFFECEEF0),
-              color: const Color(0xFF1A6BCC),
+              backgroundColor: const Color(0xFFE2E8F0),
+              color: _kBlue1,
             ),
           ),
           const SizedBox(height: 4),
           Text(
             '${(_downloadProgress * 100).toStringAsFixed(1)}%',
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 12, color: Color(0xFF727784)),
+            style: const TextStyle(fontSize: 12, color: _kMuted),
           ),
           const SizedBox(height: 8),
           TextButton(
@@ -873,35 +957,28 @@ class _ScannerScreenState extends State<ScannerScreen> {
               setState(() => _downloading = false);
             },
             child: const Text('Cancel',
-                style: TextStyle(color: Color(0xFFB71C1C))),
+                style: TextStyle(color: Color(0xFF991B1B))),
           ),
         ],
       );
     }
 
     // ── Model ready — show scan button ─────────────────────────────────────
-    // Engine is NOT loaded here — it loads lazily on first tap of Analyze.
-    // This keeps the camera healthy by avoiding memory contention at startup.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        ElevatedButton.icon(
+        _gradientButton(
+          label: 'Analyze Medicine',
+          icon: Icons.camera_alt_outlined,
           onPressed: _isProcessing ? null : _analyzeMedicine,
-          icon: const Icon(Icons.analytics_outlined),
-          label: const Text('Analyze Medicine'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF1A6BCC),
-            foregroundColor: Colors.white,
-            minimumSize: const Size.fromHeight(48),
-            textStyle: const TextStyle(fontWeight: FontWeight.w600),
-          ),
+          height: 52,
         ),
         const Padding(
           padding: EdgeInsets.only(top: 6),
           child: Text(
             'Model loads on first scan (~15 s) then stays ready.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11, color: Color(0xFF727784)),
+            style: TextStyle(fontSize: 11, color: _kMuted),
           ),
         ),
       ],
@@ -916,47 +993,58 @@ class _ScannerScreenState extends State<ScannerScreen> {
       child: Center(
         child: Container(
           margin: const EdgeInsets.symmetric(horizontal: 24),
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
+            color: _kSurface,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: const <BoxShadow>[
+              BoxShadow(
+                color: Color(0x1A000000),
+                blurRadius: 32,
+                offset: Offset(0, 8),
+              ),
+            ],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               const SizedBox(
-                width: 28,
-                height: 28,
-                child: CircularProgressIndicator(strokeWidth: 3),
+                width: 32,
+                height: 32,
+                child: CircularProgressIndicator(
+                    strokeWidth: 3, color: _kBlue1),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               ...List<Widget>.generate(_scanSteps.length, (int i) {
                 final bool done = i < _activeStep;
                 final bool active = i == _activeStep;
+                Color dotColor;
+                if (done) {
+                  dotColor = const Color(0xFF34D399);
+                } else if (active) {
+                  dotColor = _kBlue1;
+                } else {
+                  dotColor = const Color(0xFFE2E8F0);
+                }
                 return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  padding: const EdgeInsets.symmetric(vertical: 5),
                   child: Row(
                     children: <Widget>[
-                      Icon(
-                        done
-                            ? Icons.check_circle
-                            : (active
-                                ? Icons.radio_button_checked
-                                : Icons.radio_button_unchecked),
-                        size: 16,
-                        color: done || active
-                            ? const Color(0xFF1A6BCC)
-                            : const Color(0xFF727784),
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: dotColor,
+                          shape: BoxShape.circle,
+                        ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: Text(
                           _scanSteps[i],
                           style: TextStyle(
                             fontSize: 14,
-                            color: done || active
-                                ? const Color(0xFF191C1E)
-                                : const Color(0xFF727784),
+                            color: done || active ? _kNavy : _kMuted,
                             fontWeight: active
                                 ? FontWeight.w600
                                 : FontWeight.normal,
@@ -982,5 +1070,51 @@ class _ScannerScreenState extends State<ScannerScreen> {
       return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     }
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
+  Widget _gradientButton({
+    required String label,
+    required IconData icon,
+    VoidCallback? onPressed,
+    double height = 52,
+  }) {
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        gradient: onPressed != null
+            ? const LinearGradient(
+                colors: <Color>[_kBlue1, Color(0xFF2563EB)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              )
+            : null,
+        color: onPressed == null ? const Color(0xFFE2E8F0) : null,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(999),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Icon(icon,
+                  color: onPressed != null ? Colors.white : _kMuted,
+                  size: 20),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  color: onPressed != null ? Colors.white : _kMuted,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
