@@ -32,6 +32,12 @@ def test_valid_gsk_batch_format_is_true(fresh_registry: Path) -> None:
     assert result["format_valid"] is True
 
 
+def test_medicine_label_with_strength_uses_registry_format(fresh_registry: Path) -> None:
+    """A full package label should still find its registry medicine."""
+    result = registry_builder.check_batch_code("AMX1234ABC", "Amoxicillin 500mg")
+    assert result["format_valid"] is True
+
+
 def test_garbage_batch_string_is_invalid(fresh_registry: Path) -> None:
     """Garbage batch codes should fail format validation."""
     print("Checking garbage batch code handling.")
