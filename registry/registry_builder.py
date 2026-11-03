@@ -294,8 +294,8 @@ def check_batch_code(batch_code: str, medicine_name: str | None = None) -> dict:
     query = "SELECT name, region, batch_pattern FROM manufacturers"
     params = []
     if medicine_name:
-        query += " WHERE medicine_who_id = (SELECT who_id FROM medicines WHERE name LIKE ?)"
-        params.append(f"%{medicine_name}%")
+        query += " WHERE medicine_who_id = (SELECT who_id FROM medicines WHERE ? LIKE '%' || name || '%')"
+        params.append(medicine_name)
 
     c.execute(query, params)
     manufacturers = c.fetchall()
